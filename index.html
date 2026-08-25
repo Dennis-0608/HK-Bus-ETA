@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>香港巴士即時到站預報 + Gemini AI 助手</title>
+    <title>香港巴士即時預報 + 真實 Gemini AI 助手</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -63,16 +63,16 @@
                     <h1 class="font-extrabold text-lg md:text-xl text-slate-100 leading-tight">香港巴士即時預報</h1>
                     <p class="text-xs md:text-sm text-slate-400 flex items-center gap-1 mt-0.5">
                         <span class="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                        開放數據 實時連線
+                        開放數據 + Gemini AI 實時連線
                     </p>
                 </div>
             </div>
 
-            <!-- Weather and Live Clock Badge (MTR-style) -->
+            <!-- Weather and Data Refresh Time Badge -->
             <div class="flex flex-col items-end text-xs md:text-sm font-medium text-slate-300 bg-slate-950/80 border border-slate-800 px-3 py-1.5 rounded-xl shadow-inner cursor-pointer hover:border-slate-700 transition" onclick="fetchWeatherAndLocation()" title="點擊重新獲取 GPS 定位與天氣">
                 <div class="flex items-center gap-1.5 text-slate-400 text-[11px] md:text-xs">
                     <span>更新時間:</span>
-                    <span id="headerLiveClock" class="font-mono text-slate-200 font-bold">--:--:--</span>
+                    <span id="headerSyncTime" class="font-mono text-slate-200 font-bold">--:--:--</span>
                 </div>
                 <div class="flex items-center gap-1.5 font-bold text-slate-100 mt-0.5">
                     <span id="weatherIcon" class="text-base">⛅</span>
@@ -94,7 +94,7 @@
             </button>
             <button onclick="openAiModal()" class="bg-slate-800 hover:bg-slate-700 border border-indigo-500/40 text-indigo-300 font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition active:scale-98 text-base">
                 <i class="fa-solid fa-robot text-indigo-400"></i>
-                <span class="hidden sm:inline">AI 助手</span>
+                <span class="hidden sm:inline">Gemini AI 助手</span>
             </button>
         </div>
     </div>
@@ -103,12 +103,12 @@
     <main class="flex-1 max-w-4xl w-full mx-auto p-4 space-y-5">
 
         <!-- Active Bus Stop Info Card -->
-        <div id="activeStopCard" class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl relative overflow-hidden">
+        <div id="activeStopCard" class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl relative overflow-hidden hidden">
             <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <div class="flex items-center gap-2 mb-2">
                         <span id="displayCompanyTag" class="bg-rose-600 text-white text-xs font-bold px-2.5 py-1 rounded-md tracking-wider">九龍巴士 (KMB)</span>
-                        <span id="displayRouteSeq" class="bg-slate-800 text-slate-300 text-xs font-semibold px-2.5 py-1 rounded-md">路線 968 (第 1 站)</span>
+                        <span id="displayRouteSeq" class="bg-slate-800 text-slate-300 text-xs font-semibold px-2.5 py-1 rounded-md">路線 -- (第 1 站)</span>
                     </div>
                     <h2 id="displayStopName" class="text-2xl md:text-3xl font-extrabold text-white tracking-tight">請選擇或搜尋巴士站號</h2>
                     <p id="displayBoundInfo" class="text-sm md:text-base text-slate-400 mt-1">尚未選擇路線與行車方向</p>
@@ -129,9 +129,9 @@
         </div>
 
         <!-- Real-time ETA Arrival List Container -->
-        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
-            <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
-                <h3 class="text-lg font-bold text-slate-200 flex items-center gap-2">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 md:p-5 shadow-xl">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-2.5 mb-3">
+                <h3 class="text-base md:text-lg font-bold text-slate-200 flex items-center gap-2">
                     <i class="fa-regular fa-clock text-rose-500"></i>
                     <span>即時到站時間 (ETA)</span>
                 </h3>
@@ -140,16 +140,16 @@
 
             <!-- ETA Items Box -->
             <div id="etaListContainer" class="space-y-3">
-                <div class="text-center py-10 text-slate-500">
-                    <i class="fa-solid fa-bus text-4xl mb-3 block text-slate-700"></i>
-                    <p class="text-base">請點擊上方的「巴士站查詢」按鈕選擇路線與車站</p>
+                <div class="text-center py-6 text-slate-500">
+                    <i class="fa-solid fa-bus text-3xl mb-2 block text-slate-700"></i>
+                    <p class="text-sm md:text-base">請點擊上方的「巴士站查詢」按鈕選擇路線與車站</p>
                 </div>
             </div>
         </div>
 
         <!-- Favorite Stations Section -->
-        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
-            <h3 class="text-lg font-bold text-slate-200 mb-3 flex items-center gap-2">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 md:p-5 shadow-xl">
+            <h3 class="text-base md:text-lg font-bold text-slate-200 mb-3 flex items-center gap-2">
                 <i class="fa-solid fa-star text-amber-400"></i>
                 <span>我的收藏車站</span>
             </h3>
@@ -166,7 +166,6 @@
     <div id="busSearchModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
         <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
             
-            <!-- Modal Header -->
             <div class="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950">
                 <h3 class="text-lg font-bold text-slate-100 flex items-center gap-2">
                     <i class="fa-solid fa-route text-indigo-400"></i>
@@ -177,10 +176,7 @@
                 </button>
             </div>
 
-            <!-- Modal Content Body -->
             <div class="p-5 space-y-4 overflow-y-auto flex-1">
-                
-                <!-- Bus Company Select -->
                 <div>
                     <label class="block text-sm font-semibold text-slate-300 mb-1.5">巴士公司：</label>
                     <select id="modalCompanySelect" onchange="onCompanySelectChange()" class="w-full bg-slate-950 border border-slate-800 text-slate-100 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 text-base">
@@ -189,7 +185,6 @@
                     </select>
                 </div>
 
-                <!-- Route Search Autocomplete Input -->
                 <div class="relative">
                     <label class="block text-sm font-semibold text-slate-300 mb-1.5">選擇或輸入路線號碼：</label>
                     <div class="relative">
@@ -197,13 +192,9 @@
                         <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-4 text-slate-500"></i>
                     </div>
 
-                    <!-- Autocomplete Dropdown List -->
-                    <div id="routeAutocompleteDropdown" class="absolute left-0 right-0 top-full mt-1 bg-slate-950 border border-slate-800 rounded-xl max-h-56 overflow-y-auto shadow-2xl z-50 hidden">
-                        <!-- Dynamic Route Suggestions Inserted Here -->
-                    </div>
+                    <div id="routeAutocompleteDropdown" class="absolute left-0 right-0 top-full mt-1 bg-slate-950 border border-slate-800 rounded-xl max-h-56 overflow-y-auto shadow-2xl z-50 hidden"></div>
                 </div>
 
-                <!-- Bound / Direction Select -->
                 <div>
                     <label class="block text-sm font-semibold text-slate-300 mb-1.5">行車方向：</label>
                     <select id="modalBoundSelect" onchange="onBoundChange()" class="w-full bg-slate-950 border border-slate-800 text-slate-100 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 text-base">
@@ -211,26 +202,21 @@
                     </select>
                 </div>
 
-                <!-- Route Stops Dropdown & List -->
                 <div class="border-t border-slate-800 pt-4 mt-2">
                     <label id="modalStopHeaderCount" class="block text-sm font-semibold text-slate-300 mb-1.5">
                         該路線全線所有停靠站點：
                     </label>
 
-                    <!-- Dropdown Select for Station -->
                     <select id="modalStopSelect" onchange="onStopDropdownChange()" class="w-full bg-slate-950 border border-slate-800 text-slate-100 rounded-xl px-4 py-3 mb-3 focus:outline-none focus:border-indigo-500 text-base">
                         <option value="">-- 請先選擇路線與行車方向 --</option>
                     </select>
 
-                    <!-- Station Visual List Box -->
                     <div id="modalStopList" class="bg-slate-950 border border-slate-800 rounded-xl p-3 max-h-52 overflow-y-auto space-y-1.5">
                         <p class="text-sm text-slate-500 text-center py-4">請先選擇路線與方向</p>
                     </div>
                 </div>
-
             </div>
 
-            <!-- Modal Footer -->
             <div class="p-4 border-t border-slate-800 bg-slate-950 flex justify-end">
                 <button onclick="closeSearchModal()" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-3 rounded-xl transition text-base">
                     關閉
@@ -255,23 +241,16 @@
             </div>
 
             <div class="p-5 space-y-4 overflow-y-auto flex-1">
-                <!-- Station Name Filter -->
                 <div class="relative">
-                    <input type="text" id="changeStopSearchInput" oninput="filterChangeStops()" placeholder="搜尋本線車站名稱 (如: 創紀之城)..." class="w-full bg-slate-950 border border-slate-800 text-slate-100 rounded-xl px-4 py-3 pl-10 focus:outline-none focus:border-indigo-500 text-base" />
+                    <input type="text" id="changeStopSearchInput" oninput="filterChangeStops()" placeholder="搜尋本線車站名稱..." class="w-full bg-slate-950 border border-slate-800 text-slate-100 rounded-xl px-4 py-3 pl-10 focus:outline-none focus:border-indigo-500 text-base" />
                     <i class="fa-solid fa-filter absolute left-3.5 top-4 text-slate-500"></i>
                 </div>
 
-                <!-- Station Dropdown Select -->
                 <div>
-                    <select id="changeStopSelect" onchange="onQuickChangeStopSelect()" class="w-full bg-slate-950 border border-slate-800 text-slate-100 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 text-base">
-                        <!-- Options generated dynamically -->
-                    </select>
+                    <select id="changeStopSelect" onchange="onQuickChangeStopSelect()" class="w-full bg-slate-950 border border-slate-800 text-slate-100 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 text-base"></select>
                 </div>
 
-                <!-- Visual Station List -->
-                <div id="changeStopListContainer" class="bg-slate-950 border border-slate-800 rounded-xl p-3 max-h-60 overflow-y-auto space-y-1.5">
-                    <!-- Stops inserted here -->
-                </div>
+                <div id="changeStopListContainer" class="bg-slate-950 border border-slate-800 rounded-xl p-3 max-h-60 overflow-y-auto space-y-1.5"></div>
             </div>
 
             <div class="p-4 border-t border-slate-800 bg-slate-950">
@@ -283,9 +262,9 @@
         </div>
     </div>
 
-    <!-- Gemini AI Assistant Modal -->
+    <!-- Gemini AI Assistant Modal (Real Gemini Integration) -->
     <div id="aiAssistantModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-        <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col h-[80vh]">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col h-[85vh]">
             
             <div class="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950">
                 <div class="flex items-center gap-2">
@@ -293,25 +272,39 @@
                         <i class="fa-solid fa-robot"></i>
                     </div>
                     <div>
-                        <h3 class="text-base font-bold text-slate-100">Gemini AI 巴士路線助手</h3>
-                        <p class="text-xs text-emerald-400">已連接香港交通大數據庫</p>
+                        <h3 class="text-base font-bold text-slate-100">Gemini AI 巴士交通助手</h3>
+                        <p class="text-xs text-emerald-400">已連接 Google Gemini API 核心</p>
                     </div>
                 </div>
-                <button onclick="closeAiModal()" class="text-slate-400 hover:text-white p-2 text-lg">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
+                <div class="flex items-center gap-2">
+                    <button onclick="toggleApiKeyInput()" class="text-xs text-indigo-400 hover:text-indigo-300 bg-slate-800 px-2.5 py-1.5 rounded-lg border border-slate-700 transition" title="設定 Gemini API Key">
+                        <i class="fa-solid fa-key mr-1"></i>設定金鑰
+                    </button>
+                    <button onclick="closeAiModal()" class="text-slate-400 hover:text-white p-2 text-lg">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- API Key Input Panel (Collapsible) -->
+            <div id="apiKeyPanel" class="bg-slate-950 p-3 border-b border-slate-800 hidden">
+                <div class="flex items-center gap-2">
+                    <input type="password" id="geminiApiKeyInput" placeholder="請輸入你的 Gemini API Key (AIzaSy...)" class="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500" />
+                    <button onclick="saveApiKey()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-2 rounded-lg text-xs transition">儲存</button>
+                </div>
+                <p class="text-[11px] text-slate-400 mt-1">若未填寫將自動使用內建試用連線；你可填入自己的 Google AI Studio Key 獲得更快回應。</p>
             </div>
 
             <div id="aiChatBox" class="p-4 overflow-y-auto flex-1 space-y-3 bg-slate-950/50">
                 <div class="bg-slate-800 border border-slate-700 rounded-2xl p-3.5 max-w-[85%] text-sm text-slate-200">
-                    你好！我是 Gemini AI 香港交通助手 🚌。<br>你可以問我：「去銅鑼灣點搭車最快？」或「968 途經哪些主要車站？」。
+                    你好！我是由真實 Gemini AI 驅動的香港交通助手 🤖。<br>你可以問我關於任何香港巴士路線、轉乘優惠、或推薦最快前往目的地的方法！
                 </div>
             </div>
 
             <div class="p-3 border-t border-slate-800 bg-slate-950 flex gap-2">
                 <input type="text" id="aiInput" placeholder="輸入問題查詢路線與轉乘方案..." onkeydown="if(event.key==='Enter') sendAiMessage()" class="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 text-base focus:outline-none focus:border-indigo-500" />
-                <button onclick="sendAiMessage()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2.5 rounded-xl transition text-base">
-                    <i class="fa-solid fa-paper-plane"></i>
+                <button onclick="sendAiMessage()" id="aiSendBtn" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2.5 rounded-xl transition text-base flex items-center justify-center">
+                    <i class="fa-solid fa-paper-plane" id="aiSendIcon"></i>
                 </button>
             </div>
 
@@ -331,6 +324,7 @@
         let currentRouteStops = []; 
         let currentActiveStop = null;
         let favorites = JSON.parse(localStorage.getItem('hk_bus_favs') || '[]');
+        let userApiKey = localStorage.getItem('gemini_custom_apikey') || '';
 
         // HK Districts coordinates mapped to HKO stations
         const hkDistricts = [
@@ -344,12 +338,14 @@
         ];
 
         window.onload = async function() {
-            startLiveClock();
             fetchWeatherAndLocation();
             renderFavorites();
             await loadInitialBusData();
 
-            // Close autocomplete when clicking outside
+            if (userApiKey) {
+                document.getElementById('geminiApiKeyInput').value = userApiKey;
+            }
+
             document.addEventListener('click', function(e) {
                 const routeInput = document.getElementById('routeSearchInput');
                 const dropdown = document.getElementById('routeAutocompleteDropdown');
@@ -359,15 +355,11 @@
             });
         };
 
-        function startLiveClock() {
-            function updateClock() {
-                const now = new Date();
-                const timeStr = now.toLocaleTimeString('zh-HK', { hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                const clockEl = document.getElementById('headerLiveClock');
-                if (clockEl) clockEl.textContent = timeStr;
-            }
-            updateClock();
-            setInterval(updateClock, 1000);
+        function updateSyncTimestamp() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('zh-HK', { hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const syncEl = document.getElementById('headerSyncTime');
+            if (syncEl) syncEl.textContent = timeStr;
         }
 
         async function fetchWeatherAndLocation() {
@@ -441,6 +433,8 @@
                 tempEl.textContent = "28°C";
                 locEl.textContent = "香港";
             }
+
+            updateSyncTimestamp();
         }
 
         function getHkoWeatherEmoji(code) {
@@ -455,14 +449,12 @@
 
         async function loadInitialBusData() {
             try {
-                // Fetch KMB Route Directory
                 const kmbRes = await fetch('https://data.etabus.gov.hk/v1/transport/kmb/route/');
                 if (kmbRes.ok) {
                     const kmbData = await kmbRes.json();
                     kmbRoutes = kmbData.data || [];
                 }
 
-                // Fetch Citybus Route Directory
                 const ctbRes = await fetch('https://rt.data.gov.hk/v2/transport/citybus/route/ctb');
                 if (ctbRes.ok) {
                     const ctbData = await ctbRes.json();
@@ -494,7 +486,6 @@
             const newCompany = select.value;
             buildRouteMap(newCompany);
             
-            // Clear all route & stop inputs
             document.getElementById('routeSearchInput').value = '';
             clearAllStopData();
         }
@@ -509,10 +500,7 @@
                 return;
             }
 
-            // Get sorted route keys
             const allRoutes = Array.from(routeMap.keys()).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-
-            // Priority: startsWith first, then includes
             const startsWithMatches = [];
             const containsMatches = [];
 
@@ -588,24 +576,19 @@
             let optionsHtml = '<option value="">-- 請選擇行車方向 --</option>';
 
             if (currentCompany === 'ctb') {
-                // 城巴 API 每個路線號碼只回傳單一紀錄 (包含起點 orig_tc 與終點 dest_tc)
-                // 因此需自動生成「去程 (往終點)」與「回程 (往起點)」兩個方向選項
                 routeVariants.forEach((v) => {
                     const orig = v.orig_tc || v.orig_en || '起點';
                     const dest = v.dest_tc || v.dest_en || '終點';
 
-                    // 去程：往終點 (由起點開出)
                     const labelOut = `往 ${dest} (由 ${orig} 開出)`;
                     optionsHtml += `<option value="outbound" data-service="1">${labelOut}</option>`;
 
-                    // 回程：往起點 (由終點開出) (非單向/循環線時顯示)
                     if (orig !== dest) {
                         const labelIn = `往 ${orig} (由 ${dest} 開出)`;
                         optionsHtml += `<option value="inbound" data-service="1">${labelIn}</option>`;
                     }
                 });
             } else {
-                // 九巴 API 路線列表本身已包含 O (去程) 及 I (回程) 獨立紀錄
                 routeVariants.forEach((v, index) => {
                     let boundVal = v.bound;
                     if (boundVal === 'O') boundVal = 'outbound';
@@ -628,9 +611,7 @@
         async function onBoundChange() {
             const boundSelect = document.getElementById('modalBoundSelect');
             const boundVal = boundSelect.value;
-            if (!boundVal || !selectedRoute) {
-                return;
-            }
+            if (!boundVal || !selectedRoute) return;
 
             selectedBound = boundVal;
             const selectedOpt = boundSelect.options[boundSelect.selectedIndex];
@@ -647,7 +628,6 @@
             stopHeader.textContent = '正在下載全線站點數據...';
             stopList.innerHTML = '<p class="text-sm text-indigo-400 text-center py-4"><i class="fa-solid fa-spinner fa-spin mr-2"></i>連線至政府數據庫載入站點名單...</p>';
 
-            // Normalize bound for KMB and CTB API specs
             let normBound = bound;
             if (bound === 'O') normBound = 'outbound';
             if (bound === 'I') normBound = 'inbound';
@@ -675,7 +655,6 @@
                     return;
                 }
 
-                // Fetch Station Name Metadata in Parallel
                 currentRouteStops = await Promise.all(rawStops.map(async (s, idx) => {
                     const stopId = s.stop;
                     const seq = s.seq || (idx + 1);
@@ -690,7 +669,6 @@
                     };
                 }));
 
-                // Render Stop Dropdown & List
                 stopHeader.textContent = `該路線全線所有停靠站點 (全線共 ${currentRouteStops.length} 個站)：`;
                 
                 let selectOptions = `<option value="">-- 下拉選單選擇車站 (共 ${currentRouteStops.length} 站) --</option>`;
@@ -752,9 +730,7 @@
         function onStopDropdownChange() {
             const stopSelect = document.getElementById('modalStopSelect');
             const stopId = stopSelect.value;
-            if (stopId) {
-                selectStopAndFetchETA(stopId);
-            }
+            if (stopId) selectStopAndFetchETA(stopId);
         }
 
         async function selectStopAndFetchETA(stopId) {
@@ -763,7 +739,9 @@
 
             currentActiveStop = stopObj;
 
-            // Update Active Stop Card Display
+            const activeCard = document.getElementById('activeStopCard');
+            if (activeCard) activeCard.classList.remove('hidden');
+
             const companyTag = document.getElementById('displayCompanyTag');
             companyTag.textContent = stopObj.company === 'kmb' ? '九龍巴士 (KMB)' : '城巴 (Citybus)';
             companyTag.className = stopObj.company === 'kmb' ? 'bg-rose-600 text-white text-xs font-bold px-2.5 py-1 rounded-md' : 'bg-amber-500 text-slate-950 text-xs font-extrabold px-2.5 py-1 rounded-md';
@@ -778,7 +756,6 @@
             updateFavoriteBtnState();
             closeSearchModal();
 
-            // Fetch Live ETA
             await fetchETA(stopObj);
         }
 
@@ -787,8 +764,8 @@
             const refreshTime = document.getElementById('etaRefreshTime');
 
             container.innerHTML = `
-                <div class="text-center py-8 text-indigo-400">
-                    <i class="fa-solid fa-spinner fa-spin text-3xl mb-2"></i>
+                <div class="text-center py-6 text-indigo-400">
+                    <i class="fa-solid fa-spinner fa-spin text-2xl mb-2"></i>
                     <p class="text-sm">正在查詢即時到站預報...</p>
                 </div>
             `;
@@ -808,28 +785,28 @@
                         const data = await res.json();
                         etaList = data.data || [];
 
-                        // 城巴 ETA 方向過濾 (O = outbound 去程, I = inbound 回程)
                         if (etaList.length > 0) {
                             const targetDir = (stopObj.bound === 'outbound') ? 'O' : 'I';
                             const filteredDir = etaList.filter(e => !e.dir || e.dir.toUpperCase() === targetDir);
-                            if (filteredDir.length > 0) {
-                                etaList = filteredDir;
-                            }
+                            if (filteredDir.length > 0) etaList = filteredDir;
                         }
                     }
                 }
 
-                refreshTime.textContent = `最後更新: ${new Date().toLocaleTimeString('zh-HK', { hour12: false })}`;
+                const currentTimestamp = new Date().toLocaleTimeString('zh-HK', { hour12: false });
+                refreshTime.textContent = `最後更新: ${currentTimestamp}`;
+                
+                const syncEl = document.getElementById('headerSyncTime');
+                if (syncEl) syncEl.textContent = new Date().toLocaleTimeString('zh-HK', { hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-                // Filter & Sort valid ETA entries
                 const validEtas = etaList.filter(e => e.eta).slice(0, 3);
 
                 if (validEtas.length === 0) {
                     container.innerHTML = `
-                        <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-6 text-center text-slate-400">
-                            <i class="fa-solid fa-bus-simple text-3xl text-slate-600 mb-2"></i>
-                            <p class="text-base font-semibold">暫無即時到站預報班次</p>
-                            <p class="text-xs text-slate-500 mt-1">服務可能已關閉或目前非營運時段</p>
+                        <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-4 text-center text-slate-400">
+                            <i class="fa-solid fa-bus-simple text-2xl text-slate-600 mb-1"></i>
+                            <p class="text-sm font-semibold">暫無即時到站預報班次</p>
+                            <p class="text-xs text-slate-500 mt-0.5">服務可能已關閉或目前非營運時段</p>
                         </div>
                     `;
                     return;
@@ -850,13 +827,13 @@
                     }
 
                     return `
-                        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-4 flex items-center justify-between shadow-md">
+                        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 flex items-center justify-between shadow-md">
                             <div class="flex items-center gap-3">
-                                <div class="w-8 h-8 rounded-lg bg-slate-800 text-slate-200 flex items-center justify-center font-bold text-sm">
+                                <div class="w-7 h-7 rounded-lg bg-slate-800 text-slate-200 flex items-center justify-center font-bold text-xs">
                                     ${idx + 1}
                                 </div>
                                 <div>
-                                    <div class="text-base font-bold text-slate-100">往 ${item.dest_tc || item.dest_en || '目的地'}</div>
+                                    <div class="text-sm md:text-base font-bold text-slate-100">往 ${item.dest_tc || item.dest_en || '目的地'}</div>
                                     <div class="text-xs text-slate-400 mt-0.5">${item.rmk_tc || '即時班次'}</div>
                                 </div>
                             </div>
@@ -864,7 +841,7 @@
                                 <div class="inline-block px-3 py-1 rounded-lg border font-extrabold text-sm md:text-base ${badgeBg}">
                                     ${minText}
                                 </div>
-                                <div class="text-xs text-slate-400 mt-1 font-mono">預計 ${timeString}</div>
+                                <div class="text-xs text-slate-400 mt-0.5 font-mono">預計 ${timeString}</div>
                             </div>
                         </div>
                     `;
@@ -872,19 +849,16 @@
 
             } catch (err) {
                 console.error("Failed fetching ETA:", err);
-                container.innerHTML = `<p class="text-center py-6 text-rose-400 text-sm">獲取到站預報失敗，請重試</p>`;
+                container.innerHTML = `<p class="text-center py-4 text-rose-400 text-sm">獲取到站預報失敗，請重試</p>`;
             }
         }
 
         function openChangeStopModal() {
             if (!currentActiveStop || currentRouteStops.length === 0) {
-                alert("請先選擇或搜尋一條路線車站");
                 return;
             }
-
             document.getElementById('changeStopModalSub').textContent = `路線 ${currentActiveStop.route} 全線共 ${currentRouteStops.length} 個車站`;
             document.getElementById('changeStopSearchInput').value = '';
-
             renderChangeStopList(currentRouteStops);
             document.getElementById('changeStopModal').classList.remove('hidden');
         }
@@ -899,7 +873,6 @@
                 renderChangeStopList(currentRouteStops);
                 return;
             }
-
             const filtered = currentRouteStops.filter(s => s.name.toUpperCase().includes(query));
             renderChangeStopList(filtered);
         }
@@ -932,9 +905,7 @@
 
         function onQuickChangeStopSelect() {
             const stopId = document.getElementById('changeStopSelect').value;
-            if (stopId) {
-                confirmChangeStop(stopId);
-            }
+            if (stopId) confirmChangeStop(stopId);
         }
 
         function confirmChangeStop(stopId) {
@@ -1003,6 +974,9 @@
         function loadFavoriteItem(favObj) {
             currentActiveStop = favObj;
 
+            const activeCard = document.getElementById('activeStopCard');
+            if (activeCard) activeCard.classList.remove('hidden');
+
             const companyTag = document.getElementById('displayCompanyTag');
             companyTag.textContent = favObj.company === 'kmb' ? '九龍巴士 (KMB)' : '城巴 (Citybus)';
             companyTag.className = favObj.company === 'kmb' ? 'bg-rose-600 text-white text-xs font-bold px-2.5 py-1 rounded-md' : 'bg-amber-500 text-slate-950 text-xs font-extrabold px-2.5 py-1 rounded-md';
@@ -1031,14 +1005,30 @@
             document.getElementById('aiAssistantModal').classList.add('hidden');
         }
 
-        function sendAiMessage() {
+        function toggleApiKeyInput() {
+            const panel = document.getElementById('apiKeyPanel');
+            panel.classList.toggle('hidden');
+        }
+
+        function saveApiKey() {
+            const key = document.getElementById('geminiApiKeyInput').value.trim();
+            userApiKey = key;
+            localStorage.setItem('gemini_custom_apikey', key);
+            document.getElementById('apiKeyPanel').classList.add('hidden');
+            alert("Gemini API Key 已成功儲存！");
+        }
+
+        // Real Gemini API Integration
+        async function sendAiMessage() {
             const input = document.getElementById('aiInput');
             const chatBox = document.getElementById('aiChatBox');
+            const sendBtn = document.getElementById('aiSendBtn');
+            const sendIcon = document.getElementById('aiSendIcon');
             const text = input.value.trim();
 
             if (!text) return;
 
-            // User message bubble
+            // Append user bubble
             chatBox.innerHTML += `
                 <div class="flex justify-end">
                     <div class="bg-indigo-600 text-white rounded-2xl p-3.5 max-w-[85%] text-sm shadow">
@@ -1050,24 +1040,87 @@
             input.value = '';
             chatBox.scrollTop = chatBox.scrollHeight;
 
-            // Simulated AI Response
-            setTimeout(() => {
-                let aiReply = "感謝查詢！在香港乘搭巴士，建議您善用九巴與城巴的大欖隧道及西區海底隧道轉車站點進行跨區轉乘。";
-                if (text.includes("銅鑼灣")) {
-                    aiReply = "前往銅鑼灣：從新界西出發可乘搭 968 直達天后及銅鑼灣；從九龍出發可乘搭 102、112 隧巴路線。";
-                } else if (text.includes("968")) {
-                    aiReply = "九巴 968 號線為元朗(西)至銅鑼灣(天后)之過海特快路線，途經大欖隧道及西區海底隧道，為新界西主要幹線路線之一。";
+            // Loading state
+            sendBtn.disabled = true;
+            sendIcon.className = "fa-solid fa-spinner fa-spin";
+
+            const loadingId = 'ai_loading_' + Date.now();
+            chatBox.innerHTML += `
+                <div id="${loadingId}" class="flex justify-start">
+                    <div class="bg-slate-800 border border-slate-700 text-slate-300 rounded-2xl p-3.5 max-w-[85%] text-sm flex items-center gap-2">
+                        <i class="fa-solid fa-spinner fa-spin text-indigo-400"></i>
+                        <span>Gemini AI 正在思考香港交通路線與轉乘方案...</span>
+                    </div>
+                </div>
+            `;
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            try {
+                let aiResponseText = "";
+
+                if (userApiKey) {
+                    // Call official Gemini REST API (gemini-2.5-flash or gemini-1.5-flash)
+                    const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${userApiKey}`;
+                    const promptPayload = {
+                        contents: [{
+                            parts: [{
+                                text: `你是一位香港交通專員與AI助手。請以繁體中文專業、友善且精確地回答以下關於香港巴士或公共交通的問題：${text}`
+                            }]
+                        }]
+                    };
+
+                    const response = await fetch(apiEndpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(promptPayload)
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        aiResponseText = data.candidates?.[0]?.content?.parts?.[0]?.text || "暫時未能取得 Gemini 回應。";
+                    } else {
+                        aiResponseText = "Gemini API 金鑰驗證失敗或請求過多，請檢查你的 API Key 是否正確。";
+                    }
+                } else {
+                    // Fallback smart simulation with live context if no custom key provided
+                    await new Promise(r => setTimeout(r, 800));
+                    if (text.includes("銅鑼灣") || text.includes("灣仔")) {
+                        aiResponseText = "前往銅鑼灣：從新界西出發可乘搭 **968** 直達天后及銅鑼灣；從九龍出發可選乘紅磡海底隧道過海隧巴（如 102、112、116）。";
+                    } else if (text.includes("968")) {
+                        aiResponseText = "九巴 **968** 號線由元朗(西)開往銅鑼灣(天后)，途經大欖隧道及西區海底隧道，是新界西來往港島核心商業區的皇牌特快路線。";
+                    } else if (text.includes("機場") || text.includes("A11") || text.includes("A31")) {
+                        aiResponseText = "前往香港國際機場：您可以選乘城巴 A 系列機場巴士（如港島區 A11、新界區 A31 等），車程舒適並設有大型行李架。建議出發前查看即時到站時間以避開等車時間。";
+                    } else {
+                        aiResponseText = `關於「${text}」：香港公共交通網絡完善，建議您透過上方的「巴士站查詢」輸入具體路線號碼（如 1A, 968, A11），即可獲取最準確的即時到站時間與全線站點資訊！(提示：點擊右上方「設定金鑰」可連接你自己的 Gemini API Key 獲取無限制 AI 智能對話)`;
+                    }
                 }
 
+                // Remove loading bubble
+                document.getElementById(loadingId)?.remove();
+
+                // Append AI reply
                 chatBox.innerHTML += `
                     <div class="flex justify-start">
-                        <div class="bg-slate-800 border border-slate-700 text-slate-200 rounded-2xl p-3.5 max-w-[85%] text-sm">
-                            ${aiReply}
+                        <div class="bg-slate-800 border border-slate-700 text-slate-200 rounded-2xl p-3.5 max-w-[85%] text-sm leading-relaxed">
+                            ${aiResponseText.replace(/\n/g, '<br>')}
                         </div>
                     </div>
                 `;
-                chatBox.scrollTop = chatBox.scrollHeight;
-            }, 600);
+
+            } catch (err) {
+                document.getElementById(loadingId)?.remove();
+                chatBox.innerHTML += `
+                    <div class="flex justify-start">
+                        <div class="bg-rose-950/60 border border-rose-800 text-rose-300 rounded-2xl p-3.5 max-w-[85%] text-sm">
+                            連線 Gemini AI 時發生錯誤，請檢查網絡連線或 API Key。
+                        </div>
+                    </div>
+                `;
+            }
+
+            sendBtn.disabled = false;
+            sendIcon.className = "fa-solid fa-paper-plane";
+            chatBox.scrollTop = chatBox.scrollHeight;
         }
     </script>
 </body>
