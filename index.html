@@ -135,7 +135,10 @@
                     <i class="fa-regular fa-clock text-rose-500"></i>
                     <span>即時到站時間 (ETA)</span>
                 </h3>
-                <span id="etaRefreshTime" class="text-xs md:text-sm text-slate-400 font-mono">最後更新: --:--:--</span>
+                <div class="flex items-center gap-3">
+                    <span id="autoRefreshCountdown" class="text-xs text-indigo-400 font-mono hidden bg-indigo-950/60 border border-indigo-500/30 px-2 py-0.5 rounded">自動更新: <span id="countdownSec">30</span>s</span>
+                    <span id="etaRefreshTime" class="text-xs md:text-sm text-slate-400 font-mono">最後更新: --:--:--</span>
+                </div>
             </div>
 
             <!-- ETA Items Box -->
@@ -325,6 +328,11 @@
         let currentActiveStop = null;
         let favorites = JSON.parse(localStorage.getItem('hk_bus_favs') || '[]');
         let userApiKey = localStorage.getItem('gemini_custom_apikey') || '';
+
+        // Auto Refresh Timer Variables (30 seconds interval)
+        let autoRefreshTimer = null;
+        let countdownTimer = null;
+        let countdownSeconds = 30;
 
         // HK Districts coordinates mapped to HKO stations
         const hkDistricts = [
@@ -756,19 +764,52 @@
             updateFavoriteBtnState();
             closeSearchModal();
 
+            // 啟動 30 秒自動更新機制
+            startAutoRefreshTimer(stopObj);
+
             await fetchETA(stopObj);
         }
 
-        async function fetchETA(stopObj) {
+        // 啟動每 30 秒自動更新計時器
+        function startAutoRefreshTimer(stopObj) {
+            // 清除現有的計時器，避免疊加
+            if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+            if (countdownTimer) clearInterval(countdownTimer);
+
+            countdownSeconds = 30;
+            const countdownEl = document.getElementById('autoRefreshCountdown');
+            const secSpan = document.getElementById('countdownSec');
+            if (countdownEl) countdownEl.classList.remove('hidden');
+
+            // 倒數計時每秒更新數字
+            countdownTimer = setInterval(() => {
+                countdownSeconds--;
+                if (secSpan) secSpan.textContent = countdownSeconds;
+                if (countdownSeconds <= 0) {
+                    countdownSeconds = 30;
+                }
+            }, 1000);
+
+            // 每 30 秒自動調用一次 fetchETA 重新整理資料
+            autoRefreshTimer = setInterval(async () => {
+                if (currentActiveStop && currentActiveStop.stopId === stopObj.stopId) {
+                    await fetchETA(stopObj, true); // 靜默更新
+                }
+            }, 30000);
+        }
+
+        async function fetchETA(stopObj, isSilent = false) {
             const container = document.getElementById('etaListContainer');
             const refreshTime = document.getElementById('etaRefreshTime');
 
-            container.innerHTML = `
-                <div class="text-center py-6 text-indigo-400">
-                    <i class="fa-solid fa-spinner fa-spin text-2xl mb-2"></i>
-                    <p class="text-sm">正在查詢即時到站預報...</p>
-                </div>
-            `;
+            if (!isSilent) {
+                container.innerHTML = `
+                    <div class="text-center py-6 text-indigo-400">
+                        <i class="fa-solid fa-spinner fa-spin text-2xl mb-2"></i>
+                        <p class="text-sm">正在查詢即時到站預報...</p>
+                    </div>
+                `;
+            }
 
             try {
                 let etaList = [];
@@ -799,7 +840,14 @@
                 const syncEl = document.getElementById('headerSyncTime');
                 if (syncEl) syncEl.textContent = new Date().toLocaleTimeString('zh-HK', { hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-                const validEtas = etaList.filter(e => e.eta).slice(0, 3);
+                // 專家修改：過濾掉已經過期（即到達時間小於當前時間）的班次，並最多只取前 3 個有效班次
+                const nowTime = new Date();
+                const validEtas = etaList.filter(e => {
+                    if (!e.eta) return false;
+                    const etaDate = new Date(e.eta);
+                    // 容許最多過期 30 秒以內的誤差，確保準確度
+                    return (etaDate - nowTime) > -30000;
+                }).slice(0, 3);
 
                 if (validEtas.length === 0) {
                     container.innerHTML = `
@@ -849,7 +897,9 @@
 
             } catch (err) {
                 console.error("Failed fetching ETA:", err);
-                container.innerHTML = `<p class="text-center py-4 text-rose-400 text-sm">獲取到站預報失敗，請重試</p>`;
+                if (!isSilent) {
+                    container.innerHTML = `<p class="text-center py-4 text-rose-400 text-sm">獲取到站預報失敗，請重試</p>`;
+                }
             }
         }
 
@@ -986,6 +1036,7 @@
             document.getElementById('displayBoundInfo').textContent = `收藏車站 - 路線 ${favObj.route}`;
 
             updateFavoriteBtnState();
+            startAutoRefreshTimer(favObj);
             fetchETA(favObj);
         }
 
@@ -1059,7 +1110,6 @@
                 let aiResponseText = "";
 
                 if (userApiKey) {
-                    // Call official Gemini REST API (gemini-2.5-flash or gemini-1.5-flash)
                     const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${userApiKey}`;
                     const promptPayload = {
                         contents: [{
@@ -1082,7 +1132,6 @@
                         aiResponseText = "Gemini API 金鑰驗證失敗或請求過多，請檢查你的 API Key 是否正確。";
                     }
                 } else {
-                    // Fallback smart simulation with live context if no custom key provided
                     await new Promise(r => setTimeout(r, 800));
                     if (text.includes("銅鑼灣") || text.includes("灣仔")) {
                         aiResponseText = "前往銅鑼灣：從新界西出發可乘搭 **968** 直達天后及銅鑼灣；從九龍出發可選乘紅磡海底隧道過海隧巴（如 102、112、116）。";
@@ -1095,10 +1144,8 @@
                     }
                 }
 
-                // Remove loading bubble
                 document.getElementById(loadingId)?.remove();
 
-                // Append AI reply
                 chatBox.innerHTML += `
                     <div class="flex justify-start">
                         <div class="bg-slate-800 border border-slate-700 text-slate-200 rounded-2xl p-3.5 max-w-[85%] text-sm leading-relaxed">
