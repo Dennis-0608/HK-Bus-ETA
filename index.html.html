@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="zh-HK" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>香港巴士即時到站預報 + Gemini AI 助手</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        kmb: '#e11d48',
+                        ctb: '#eab308',
+                        brandBg: '#0b0f19',
+                        cardBg: '#111827',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Mobile Touch & Prevent iOS Input Zoom */
+        input, select, button {
+            font-size: 16px !important;
+        }
+        
+        /* Custom Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-indigo-500 selection:text-white">
+
+    <!-- Top Header -->
+    <header class="bg-slate-900/90 backdrop-blur-md border-b border-slate-800 sticky top-0 z-30 px-4 py-3 shadow-md">
+        <div class="max-w-4xl mx-auto flex items-center justify-between gap-2">
+            
+            <!-- App Logo & Title -->
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 md:w-11 md:h-11 rounded-xl bg-gradient-to-tr from-rose-600 to-amber-500 flex items-center justify-center text-white shadow-lg shadow-rose-900/30">
+                    <i class="fa-solid fa-bus text-lg md:text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="font-extrabold text-lg md:text-xl text-slate-100 leading-tight">香港巴士即時預報</h1>
+                    <p class="text-xs md:text-sm text-slate-400 flex items-center gap-1 mt-0.5">
+                        <span class="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        開放數據 實時連線
+                    </p>
+                </div>
+            </div>
+
+            <!-- Weather and Live Clock Badge (MTR-style) -->
+            <div class="flex flex-col items-end text-xs md:text-sm font-medium text-slate-300 bg-slate-950/80 border border-slate-800 px-3 py-1.5 rounded-xl shadow-inner cursor-pointer hover:border-slate-700 transition" onclick="fetchWeatherAndLocation()" title="點擊重新獲取 GPS 定位與天氣">
+                <div class="flex items-center gap-1.5 text-slate-400 text-[11px] md:text-xs">
+                    <span>更新時間:</span>
+                    <span id="headerLiveClock" class="font-mono text-slate-200 font-bold">--:--:--</span>
+                </div>
+                <div class="flex items-center gap-1.5 font-bold text-slate-100 mt-0.5">
+                    <span id="weatherIcon" class="text-base">⛅</span>
+                    <span id="weatherTemp" class="text-emerald-400 font-extrabold text-sm md:text-base">--°C</span>
+                    <span id="weatherLocation" class="text-slate-300">香港</span>
+                    <i class="fa-solid fa-location-dot text-xs text-indigo-400 ml-0.5" id="gpsStatusIcon" title="GPS 定位狀態"></i>
+                </div>
+            </div>
+
+        </div>
+    </header>
+
+    <!-- Action Controls Toolbar -->
+    <div class="bg-slate-900 border-b border-slate-800 px-4 py-3">
+        <div class="max-w-4xl mx-auto flex items-center justify-between gap-3">
+            <button onclick="openSearchModal()" class="flex-1 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold py-3 px-4 rounded-xl shadow-lg shadow-indigo-900/30 flex items-center justify-center gap-2 transition active:scale-98 text-base">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <span>巴士站查詢 / 路線檢索</span>
+            </button>
+            <button onclick="openAiModal()" class="bg-slate-800 hover:bg-slate-700 border border-indigo-500/40 text-indigo-300 font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition active:scale-98 text-base">
+                <i class="fa-solid fa-robot text-indigo-400"></i>
+                <span class="hidden sm:inline">AI 助手</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Application Container -->
+    <main class="flex-1 max-w-4xl w-full mx-auto p-4 space-y-5">
+
+        <!-- Active Bus Stop Info Card -->
+        <div id="activeStopCard" class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl relative overflow-hidden">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <div class="flex items-center gap-2 mb-2">
+                        <span id="displayCompanyTag" class="bg-rose-600 text-white text-xs font-bold px-2.5 py-1 rounded-md tracking-wider">九龍巴士 (KMB)</span>
+                        <span id="displayRouteSeq" class="bg-slate-800 text-slate-300 text-xs font-semibold px-2.5 py-1 rounded-md">路線 968 (第 1 站)</span>
+                    </div>
+                    <h2 id="displayStopName" class="text-2xl md:text-3xl font-extrabold text-white tracking-tight">請選擇或搜尋巴士站號</h2>
+                    <p id="displayBoundInfo" class="text-sm md:text-base text-slate-400 mt-1">尚未選擇路線與行車方向</p>
+                </div>
+
+                <!-- Action Buttons: Favorite & Change Station -->
+                <div class="flex flex-col sm:flex-row md:flex-col gap-2 shrink-0">
+                    <button id="favBtn" onclick="toggleFavorite()" class="bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 font-semibold px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 transition text-sm">
+                        <i id="favIcon" class="fa-regular fa-star"></i>
+                        <span id="favBtnText">加入收藏</span>
+                    </button>
+                    <button id="changeStopBtn" onclick="openChangeStopModal()" class="bg-indigo-900/40 hover:bg-indigo-800/60 text-indigo-300 border border-indigo-500/40 font-semibold px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 transition text-sm">
+                        <i class="fa-solid fa-arrows-rotate text-xs"></i>
+                        <span>更改車站</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Real-time ETA Arrival List Container -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+                <h3 class="text-lg font-bold text-slate-200 flex items-center gap-2">
+                    <i class="fa-regular fa-clock text-rose-500"></i>
+                    <span>即時到站時間 (ETA)</span>
+                </h3>
+                <span id="etaRefreshTime" class="text-xs md:text-sm text-slate-400 font-mono">最後更新: --:--:--</span>
+            </div>
+
+            <!-- ETA Items Box -->
+            <div id="etaListContainer" class="space-y-3">
+                <div class="text-center py-10 text-slate-500">
+                    <i class="fa-solid fa-bus text-4xl mb-3 block text-slate-700"></i>
+                    <p class="text-base">請點擊上方的「巴士站查詢」按鈕選擇路線與車站</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Favorite Stations Section -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+            <h3 class="text-lg font-bold text-slate-200 mb-3 flex items-center gap-2">
+                <i class="fa-solid fa-star text-amber-400"></i>
+                <span>我的收藏車站</span>
+            </h3>
+            <div id="favoritesSection" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div class="col-span-full text-center py-6 text-slate-500 text-sm">
+                    暫無收藏的巴士站，查詢車站時點擊「加入收藏」即可儲存
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Bus Search Modal Window -->
+    <div id="busSearchModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            
+            <!-- Modal Header -->
+            <div class="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950">
+                <h3 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+                    <i class="fa-solid fa-route text-indigo-400"></i>
+                    <span>全港巴士站點檢索</span>
+                </h3>
+                <button onclick="closeSearchModal()" class="text-slate-400 hover:text-white p-2 rounded-lg text-lg">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <!-- Modal Content Body -->
+            <div class="p-5 space-y-4 overflow-y-auto flex-1">
+                
+                <!-- Bus Company Select -->
+                <div>
+                    <label class="block text-sm font-semibold text-slate-300 mb-1.5">巴士公司：</label>
+                    <select id="modalCompanySelect" onchange="onCompanySelectChange()" class="w-full bg-slate-950 border border-slate-800 text-slate-100 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 text-base">
+                        <option value="kmb">九龍巴士 (KMB)</option>
+                        <option value="ctb">城巴 (Citybus - CTB)</option>
+                    </select>
+                </div>
+
+                <!-- Route Search Autocomplete Input -->
+                <div class="relative">
+                    <label class="block text-sm font-semibold text-slate-300 mb-1.5">選擇或輸入路線號碼：</label>
+                    <div class="relative">
+                        <input type="text" id="routeSearchInput" oninput="onRouteInput(event)" placeholder="輸入路線 (如: 1A, 968, A11)..." autocomplete="off" class="w-full bg-slate-950 border border-slate-800 text-slate-100 rounded-xl px-4 py-3 pl-10 focus:outline-none focus:border-indigo-500 text-base" />
+                        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-4 text-slate-500"></i>
+                    </div>
+
+                    <!-- Autocomplete Dropdown List -->
+                    <div id="routeAutocompleteDropdown" class="absolute left-0 right-0 top-full mt-1 bg-slate-950 border border-slate-800 rounded-xl max-h-56 overflow-y-auto shadow-2xl z-50 hidden">
+                        <!-- Dynamic Route Suggestions Inserted Here -->
+                    </div>
+                </div>
+
+                <!-- Bound / Direction Select -->
+                <div>
+                    <label class="block text-sm font-semibold text-slate-300 mb-1.5">行車方向：</label>
+                    <select id="modalBoundSelect" onchange="onBoundChange()" class="w-full bg-slate-950 border border-slate-800 text-slate-100 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 text-base">
+                        <option value="">-- 請先選擇路線 --</option>
+                    </select>
+                </div>
+
+                <!-- Route Stops Dropdown & List -->
+                <div class="border-t border-slate-800 pt-4 mt-2">
+                    <label id="modalStopHeaderCount" class="block text-sm font-semibold text-slate-300 mb-1.5">
+                        該路線全線所有停靠站點：
+                    </label>
+
+                    <!-- Dropdown Select for Station -->
+                    <select id="modalStopSelect" onchange="onStopDropdownChange()" class="w-full bg-slate-950 border border-slate-800 text-slate-100 rounded-xl px-4 py-3 mb-3 focus:outline-none focus:border-indigo-500 text-base">
+                        <option value="">-- 請先選擇路線與行車方向 --</option>
+                    </select>
+
+                    <!-- Station Visual List Box -->
+                    <div id="modalStopList" class="bg-slate-950 border border-slate-800 rounded-xl p-3 max-h-52 overflow-y-auto space-y-1.5">
+                        <p class="text-sm text-slate-500 text-center py-4">請先選擇路線與方向</p>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="p-4 border-t border-slate-800 bg-slate-950 flex justify-end">
+                <button onclick="closeSearchModal()" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-3 rounded-xl transition text-base">
+                    關閉
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Change Station Dialog -->
+    <div id="changeStopModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
+            
+            <div class="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950">
+                <div>
+                    <h3 class="text-lg font-bold text-slate-100">更改車站</h3>
+                    <p id="changeStopModalSub" class="text-xs text-indigo-400 mt-0.5">選擇同路線的其他車站</p>
+                </div>
+                <button onclick="closeChangeStopModal()" class="text-slate-400 hover:text-white p-2 text-lg">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div class="p-5 space-y-4 overflow-y-auto flex-1">
+                <!-- Station Name Filter -->
+                <div class="relative">
+                    <input type="text" id="changeStopSearchInput" oninput="filterChangeStops()" placeholder="搜尋本線車站名稱 (如: 創紀之城)..." class="w-full bg-slate-950 border border-slate-800 text-slate-100 rounded-xl px-4 py-3 pl-10 focus:outline-none focus:border-indigo-500 text-base" />
+                    <i class="fa-solid fa-filter absolute left-3.5 top-4 text-slate-500"></i>
+                </div>
+
+                <!-- Station Dropdown Select -->
+                <div>
+                    <select id="changeStopSelect" onchange="onQuickChangeStopSelect()" class="w-full bg-slate-950 border border-slate-800 text-slate-100 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 text-base">
+                        <!-- Options generated dynamically -->
+                    </select>
+                </div>
+
+                <!-- Visual Station List -->
+                <div id="changeStopListContainer" class="bg-slate-950 border border-slate-800 rounded-xl p-3 max-h-60 overflow-y-auto space-y-1.5">
+                    <!-- Stops inserted here -->
+                </div>
+            </div>
+
+            <div class="p-4 border-t border-slate-800 bg-slate-950">
+                <button onclick="closeChangeStopModal()" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-3 rounded-xl transition text-base">
+                    取消
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Gemini AI Assistant Modal -->
+    <div id="aiAssistantModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col h-[80vh]">
+            
+            <div class="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950">
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white">
+                        <i class="fa-solid fa-robot"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-bold text-slate-100">Gemini AI 巴士路線助手</h3>
+                        <p class="text-xs text-emerald-400">已連接香港交通大數據庫</p>
+                    </div>
+                </div>
+                <button onclick="closeAiModal()" class="text-slate-400 hover:text-white p-2 text-lg">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div id="aiChatBox" class="p-4 overflow-y-auto flex-1 space-y-3 bg-slate-950/50">
+                <div class="bg-slate-800 border border-slate-700 rounded-2xl p-3.5 max-w-[85%] text-sm text-slate-200">
+                    你好！我是 Gemini AI 香港交通助手 🚌。<br>你可以問我：「去銅鑼灣點搭車最快？」或「968 途經哪些主要車站？」。
+                </div>
+            </div>
+
+            <div class="p-3 border-t border-slate-800 bg-slate-950 flex gap-2">
+                <input type="text" id="aiInput" placeholder="輸入問題查詢路線與轉乘方案..." onkeydown="if(event.key==='Enter') sendAiMessage()" class="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 text-base focus:outline-none focus:border-indigo-500" />
+                <button onclick="sendAiMessage()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2.5 rounded-xl transition text-base">
+                    <i class="fa-solid fa-paper-plane"></i>
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Application State
+        let kmbRoutes = [];
+        let ctbRoutes = [];
+        let routeMap = new Map(); 
+        let kmbStopsDirectory = new Map(); 
+        let ctbStopsDirectory = new Map(); 
+        let currentCompany = 'kmb';
+        let selectedRoute = null;
+        let selectedBound = null;
+        let currentRouteStops = []; 
+        let currentActiveStop = null;
+        let favorites = JSON.parse(localStorage.getItem('hk_bus_favs') || '[]');
+
+        // HK Districts coordinates mapped to HKO stations
+        const hkDistricts = [
+            { name: '尖沙咀', hkoName: '香港天文台', lat: 22.3019, lng: 114.1742 },
+            { name: '中環', hkoName: '香港公園', lat: 22.2780, lng: 114.1580 },
+            { name: '觀塘', hkoName: '觀塘', lat: 22.3117, lng: 114.2258 },
+            { name: '沙田', hkoName: '沙田', lat: 22.3833, lng: 114.1833 },
+            { name: '屯門', hkoName: '屯門', lat: 22.3917, lng: 113.9714 },
+            { name: '元朗', hkoName: '濕地公園', lat: 22.4600, lng: 114.0000 },
+            { name: '荃灣', hkoName: '荃灣城門谷', lat: 22.3733, lng: 114.1167 }
+        ];
+
+        window.onload = async function() {
+            startLiveClock();
+            fetchWeatherAndLocation();
+            renderFavorites();
+            await loadInitialBusData();
+
+            // Close autocomplete when clicking outside
+            document.addEventListener('click', function(e) {
+                const routeInput = document.getElementById('routeSearchInput');
+                const dropdown = document.getElementById('routeAutocompleteDropdown');
+                if (routeInput && dropdown && !routeInput.contains(e.target) && !dropdown.contains(e.target)) {
+                    dropdown.classList.add('hidden');
+                }
+            });
+        };
+
+        function startLiveClock() {
+            function updateClock() {
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString('zh-HK', { hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                const clockEl = document.getElementById('headerLiveClock');
+                if (clockEl) clockEl.textContent = timeStr;
+            }
+            updateClock();
+            setInterval(updateClock, 1000);
+        }
+
+        async function fetchWeatherAndLocation() {
+            const gpsIcon = document.getElementById('gpsStatusIcon');
+            const locEl = document.getElementById('weatherLocation');
+            const tempEl = document.getElementById('weatherTemp');
+            const iconEl = document.getElementById('weatherIcon');
+
+            if (gpsIcon) gpsIcon.className = "fa-solid fa-spinner fa-spin text-xs text-amber-400 ml-0.5";
+
+            let userDistrict = null;
+
+            if ("geolocation" in navigator) {
+                try {
+                    const pos = await new Promise((resolve, reject) => {
+                        navigator.geolocation.getCurrentPosition(resolve, reject, {
+                            timeout: 5000,
+                            maximumAge: 60000,
+                            enableHighAccuracy: true
+                        });
+                    });
+
+                    const lat = pos.coords.latitude;
+                    const lng = pos.coords.longitude;
+
+                    let minDist = Infinity;
+                    hkDistricts.forEach(d => {
+                        const dist = Math.pow(d.lat - lat, 2) + Math.pow(d.lng - lng, 2);
+                        if (dist < minDist) {
+                            minDist = dist;
+                            userDistrict = d;
+                        }
+                    });
+
+                    if (gpsIcon) gpsIcon.className = "fa-solid fa-location-dot text-xs text-emerald-400 ml-0.5";
+                } catch (err) {
+                    if (gpsIcon) gpsIcon.className = "fa-solid fa-location-slash text-xs text-slate-500 ml-0.5";
+                }
+            } else {
+                if (gpsIcon) gpsIcon.className = "fa-solid fa-location-slash text-xs text-slate-500 ml-0.5";
+            }
+
+            try {
+                const res = await fetch('https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=rhrread&lang=tc');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.icon && data.icon.length > 0) {
+                        iconEl.textContent = getHkoWeatherEmoji(data.icon[0]);
+                    }
+
+                    const tempArr = (data.temperature && data.temperature.data) ? data.temperature.data : [];
+                    let matchedTemp = null;
+
+                    if (userDistrict) {
+                        const targetItem = tempArr.find(t => t.place === userDistrict.hkoName || t.place.includes(userDistrict.name));
+                        if (targetItem) {
+                            matchedTemp = targetItem.value;
+                            locEl.textContent = userDistrict.name;
+                        }
+                    }
+
+                    if (matchedTemp === null) {
+                        const hkoItem = tempArr.find(t => t.place === '香港天文台' || t.place === '京士柏') || tempArr[0];
+                        matchedTemp = hkoItem ? hkoItem.value : 28;
+                        if (!userDistrict) locEl.textContent = "香港";
+                    }
+
+                    tempEl.textContent = `${matchedTemp}°C`;
+                }
+            } catch (err) {
+                tempEl.textContent = "28°C";
+                locEl.textContent = "香港";
+            }
+        }
+
+        function getHkoWeatherEmoji(code) {
+            const c = Number(code);
+            if (c === 50) return '☀️';
+            if (c === 51 || c === 52) return '⛅';
+            if (c === 60 || c === 61) return '☁️';
+            if (c >= 62 && c <= 64) return '🌧️';
+            if (c === 65) return '⛈️';
+            return '⛅';
+        }
+
+        async function loadInitialBusData() {
+            try {
+                // Fetch KMB Route Directory
+                const kmbRes = await fetch('https://data.etabus.gov.hk/v1/transport/kmb/route/');
+                if (kmbRes.ok) {
+                    const kmbData = await kmbRes.json();
+                    kmbRoutes = kmbData.data || [];
+                }
+
+                // Fetch Citybus Route Directory
+                const ctbRes = await fetch('https://rt.data.gov.hk/v2/transport/citybus/route/ctb');
+                if (ctbRes.ok) {
+                    const ctbData = await ctbRes.json();
+                    ctbRoutes = ctbData.data || [];
+                }
+
+                buildRouteMap('kmb');
+            } catch (err) {
+                console.error("Failed loading routes:", err);
+            }
+        }
+
+        function buildRouteMap(company) {
+            routeMap.clear();
+            currentCompany = company;
+            const routesList = (company === 'kmb') ? kmbRoutes : ctbRoutes;
+
+            routesList.forEach(r => {
+                const routeNum = r.route;
+                if (!routeMap.has(routeNum)) {
+                    routeMap.set(routeNum, []);
+                }
+                routeMap.get(routeNum).push(r);
+            });
+        }
+
+        function onCompanySelectChange() {
+            const select = document.getElementById('modalCompanySelect');
+            const newCompany = select.value;
+            buildRouteMap(newCompany);
+            
+            // Clear all route & stop inputs
+            document.getElementById('routeSearchInput').value = '';
+            clearAllStopData();
+        }
+
+        function onRouteInput(e) {
+            const query = e.target.value.trim().toUpperCase();
+            const dropdown = document.getElementById('routeAutocompleteDropdown');
+
+            if (!query) {
+                dropdown.classList.add('hidden');
+                clearAllStopData();
+                return;
+            }
+
+            // Get sorted route keys
+            const allRoutes = Array.from(routeMap.keys()).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+            // Priority: startsWith first, then includes
+            const startsWithMatches = [];
+            const containsMatches = [];
+
+            allRoutes.forEach(r => {
+                const upperR = r.toUpperCase();
+                if (upperR.startsWith(query)) {
+                    startsWithMatches.push(r);
+                } else if (upperR.includes(query)) {
+                    containsMatches.push(r);
+                }
+            });
+
+            const matchedRoutes = [...startsWithMatches, ...containsMatches].slice(0, 30);
+
+            if (matchedRoutes.length === 0) {
+                dropdown.innerHTML = '<div class="p-3 text-sm text-slate-500 text-center">沒有找到相關路線</div>';
+                dropdown.classList.remove('hidden');
+                return;
+            }
+
+            dropdown.innerHTML = matchedRoutes.map(r => {
+                const routeVariants = routeMap.get(r) || [];
+                const firstVar = routeVariants[0] || {};
+                const orig = firstVar.orig_tc || firstVar.orig_en || '';
+                const dest = firstVar.dest_tc || firstVar.dest_en || '';
+                const termInfo = (orig && dest) ? `${orig} ↔ ${dest}` : '';
+
+                return `
+                    <div onclick="selectRouteFromDropdown('${r}')" class="p-3 hover:bg-slate-800 cursor-pointer border-b border-slate-800/50 flex items-center justify-between text-base">
+                        <span class="font-extrabold text-indigo-400">${r}</span>
+                        <span class="text-xs text-slate-400 truncate max-w-[200px]">${termInfo}</span>
+                    </div>
+                `;
+            }).join('');
+
+            dropdown.classList.remove('hidden');
+        }
+
+        function selectRouteFromDropdown(routeNum) {
+            document.getElementById('routeSearchInput').value = routeNum;
+            document.getElementById('routeAutocompleteDropdown').classList.add('hidden');
+            selectedRoute = routeNum;
+            loadBoundOptions(routeNum);
+        }
+
+        function clearAllStopData() {
+            selectedBound = null;
+            currentRouteStops = [];
+            
+            const boundSelect = document.getElementById('modalBoundSelect');
+            if (boundSelect) boundSelect.innerHTML = '<option value="">-- 請先選擇路線 --</option>';
+
+            const stopHeader = document.getElementById('modalStopHeaderCount');
+            if (stopHeader) stopHeader.textContent = '該路線全線所有停靠站點：';
+
+            const stopSelect = document.getElementById('modalStopSelect');
+            if (stopSelect) stopSelect.innerHTML = '<option value="">-- 請先選擇路線與行車方向 --</option>';
+
+            const stopList = document.getElementById('modalStopList');
+            if (stopList) stopList.innerHTML = '<p class="text-sm text-slate-500 text-center py-4">請先選擇路線與方向</p>';
+        }
+
+        function loadBoundOptions(routeNum) {
+            clearAllStopData();
+            const boundSelect = document.getElementById('modalBoundSelect');
+            const routeVariants = routeMap.get(routeNum) || [];
+
+            if (routeVariants.length === 0) {
+                boundSelect.innerHTML = '<option value="">-- 無效路線 --</option>';
+                return;
+            }
+
+            let optionsHtml = '<option value="">-- 請選擇行車方向 --</option>';
+
+            if (currentCompany === 'ctb') {
+                // 城巴 API 每個路線號碼只回傳單一紀錄 (包含起點 orig_tc 與終點 dest_tc)
+                // 因此需自動生成「去程 (往終點)」與「回程 (往起點)」兩個方向選項
+                routeVariants.forEach((v) => {
+                    const orig = v.orig_tc || v.orig_en || '起點';
+                    const dest = v.dest_tc || v.dest_en || '終點';
+
+                    // 去程：往終點 (由起點開出)
+                    const labelOut = `往 ${dest} (由 ${orig} 開出)`;
+                    optionsHtml += `<option value="outbound" data-service="1">${labelOut}</option>`;
+
+                    // 回程：往起點 (由終點開出) (非單向/循環線時顯示)
+                    if (orig !== dest) {
+                        const labelIn = `往 ${orig} (由 ${dest} 開出)`;
+                        optionsHtml += `<option value="inbound" data-service="1">${labelIn}</option>`;
+                    }
+                });
+            } else {
+                // 九巴 API 路線列表本身已包含 O (去程) 及 I (回程) 獨立紀錄
+                routeVariants.forEach((v, index) => {
+                    let boundVal = v.bound;
+                    if (boundVal === 'O') boundVal = 'outbound';
+                    if (boundVal === 'I') boundVal = 'inbound';
+                    if (!boundVal) boundVal = (index === 0) ? 'outbound' : 'inbound';
+
+                    const orig = v.orig_tc || v.orig_en || '起點';
+                    const dest = v.dest_tc || v.dest_en || '終點';
+                    const serviceType = v.service_type || '1';
+                    const serviceNote = (serviceType !== '1') ? ` [特別班次 ${serviceType}]` : '';
+
+                    const label = `往 ${dest} (由 ${orig} 開出)${serviceNote}`;
+                    optionsHtml += `<option value="${boundVal}" data-service="${serviceType}">${label}</option>`;
+                });
+            }
+
+            boundSelect.innerHTML = optionsHtml;
+        }
+
+        async function onBoundChange() {
+            const boundSelect = document.getElementById('modalBoundSelect');
+            const boundVal = boundSelect.value;
+            if (!boundVal || !selectedRoute) {
+                return;
+            }
+
+            selectedBound = boundVal;
+            const selectedOpt = boundSelect.options[boundSelect.selectedIndex];
+            const serviceType = selectedOpt ? selectedOpt.getAttribute('data-service') || '1' : '1';
+
+            await fetchRouteStops(currentCompany, selectedRoute, boundVal, serviceType);
+        }
+
+        async function fetchRouteStops(company, routeNum, bound, serviceType) {
+            const stopHeader = document.getElementById('modalStopHeaderCount');
+            const stopSelect = document.getElementById('modalStopSelect');
+            const stopList = document.getElementById('modalStopList');
+
+            stopHeader.textContent = '正在下載全線站點數據...';
+            stopList.innerHTML = '<p class="text-sm text-indigo-400 text-center py-4"><i class="fa-solid fa-spinner fa-spin mr-2"></i>連線至政府數據庫載入站點名單...</p>';
+
+            // Normalize bound for KMB and CTB API specs
+            let normBound = bound;
+            if (bound === 'O') normBound = 'outbound';
+            if (bound === 'I') normBound = 'inbound';
+
+            try {
+                let rawStops = [];
+
+                if (company === 'kmb') {
+                    const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route-stop/${routeNum}/${normBound}/${serviceType}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        rawStops = data.data || [];
+                    }
+                } else {
+                    const res = await fetch(`https://rt.data.gov.hk/v2/transport/citybus/route-stop/ctb/${routeNum}/${normBound}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        rawStops = data.data || [];
+                    }
+                }
+
+                if (rawStops.length === 0) {
+                    stopHeader.textContent = '該路線全線所有停靠站點 (無資料)';
+                    stopList.innerHTML = '<p class="text-sm text-amber-500 text-center py-4">無法載入此路線之車站列表</p>';
+                    return;
+                }
+
+                // Fetch Station Name Metadata in Parallel
+                currentRouteStops = await Promise.all(rawStops.map(async (s, idx) => {
+                    const stopId = s.stop;
+                    const seq = s.seq || (idx + 1);
+                    const stopName = await getStopName(company, stopId);
+                    return {
+                        stopId: stopId,
+                        seq: seq,
+                        name: stopName,
+                        route: routeNum,
+                        bound: normBound,
+                        company: company
+                    };
+                }));
+
+                // Render Stop Dropdown & List
+                stopHeader.textContent = `該路線全線所有停靠站點 (全線共 ${currentRouteStops.length} 個站)：`;
+                
+                let selectOptions = `<option value="">-- 下拉選單選擇車站 (共 ${currentRouteStops.length} 站) --</option>`;
+                let listHtml = '';
+
+                currentRouteStops.forEach(s => {
+                    selectOptions += `<option value="${s.stopId}">第 ${s.seq} 站：${s.name}</option>`;
+                    listHtml += `
+                        <div onclick="selectStopAndFetchETA('${s.stopId}')" class="p-3 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl cursor-pointer flex items-center justify-between text-base transition">
+                            <div class="flex items-center gap-3">
+                                <span class="w-7 h-7 rounded-lg bg-slate-800 text-slate-300 flex items-center justify-center font-mono font-bold text-xs">${s.seq}</span>
+                                <span class="font-bold text-slate-100">${s.name}</span>
+                            </div>
+                            <span class="text-xs text-indigo-400 font-semibold flex items-center gap-1">
+                                <span>查看即時</span>
+                                <i class="fa-solid fa-chevron-right text-[10px]"></i>
+                            </span>
+                        </div>
+                    `;
+                });
+
+                stopSelect.innerHTML = selectOptions;
+                stopList.innerHTML = listHtml;
+
+            } catch (err) {
+                console.error("Error fetching route stops:", err);
+                stopHeader.textContent = '該路線全線所有停靠站點 (載入失敗)';
+                stopList.innerHTML = '<p class="text-sm text-rose-500 text-center py-4">數據連線失敗，請重試</p>';
+            }
+        }
+
+        async function getStopName(company, stopId) {
+            if (company === 'kmb') {
+                if (kmbStopsDirectory.has(stopId)) return kmbStopsDirectory.get(stopId);
+                try {
+                    const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop/${stopId}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        const name = (data.data && data.data.name_tc) ? data.data.name_tc : stopId;
+                        kmbStopsDirectory.set(stopId, name);
+                        return name;
+                    }
+                } catch (e) {}
+            } else {
+                if (ctbStopsDirectory.has(stopId)) return ctbStopsDirectory.get(stopId);
+                try {
+                    const res = await fetch(`https://rt.data.gov.hk/v2/transport/citybus/stop/${stopId}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        const name = (data.data && data.data.name_tc) ? data.data.name_tc : stopId;
+                        ctbStopsDirectory.set(stopId, name);
+                        return name;
+                    }
+                } catch (e) {}
+            }
+            return `車站 (${stopId.substring(0, 6)})`;
+        }
+
+        function onStopDropdownChange() {
+            const stopSelect = document.getElementById('modalStopSelect');
+            const stopId = stopSelect.value;
+            if (stopId) {
+                selectStopAndFetchETA(stopId);
+            }
+        }
+
+        async function selectStopAndFetchETA(stopId) {
+            const stopObj = currentRouteStops.find(s => s.stopId === stopId);
+            if (!stopObj) return;
+
+            currentActiveStop = stopObj;
+
+            // Update Active Stop Card Display
+            const companyTag = document.getElementById('displayCompanyTag');
+            companyTag.textContent = stopObj.company === 'kmb' ? '九龍巴士 (KMB)' : '城巴 (Citybus)';
+            companyTag.className = stopObj.company === 'kmb' ? 'bg-rose-600 text-white text-xs font-bold px-2.5 py-1 rounded-md' : 'bg-amber-500 text-slate-950 text-xs font-extrabold px-2.5 py-1 rounded-md';
+
+            document.getElementById('displayRouteSeq').textContent = `路線 ${stopObj.route} (第 ${stopObj.seq} 站)`;
+            document.getElementById('displayStopName').textContent = stopObj.name;
+            
+            const boundSelect = document.getElementById('modalBoundSelect');
+            const boundLabel = boundSelect.options[boundSelect.selectedIndex] ? boundSelect.options[boundSelect.selectedIndex].text : '';
+            document.getElementById('displayBoundInfo').textContent = boundLabel;
+
+            updateFavoriteBtnState();
+            closeSearchModal();
+
+            // Fetch Live ETA
+            await fetchETA(stopObj);
+        }
+
+        async function fetchETA(stopObj) {
+            const container = document.getElementById('etaListContainer');
+            const refreshTime = document.getElementById('etaRefreshTime');
+
+            container.innerHTML = `
+                <div class="text-center py-8 text-indigo-400">
+                    <i class="fa-solid fa-spinner fa-spin text-3xl mb-2"></i>
+                    <p class="text-sm">正在查詢即時到站預報...</p>
+                </div>
+            `;
+
+            try {
+                let etaList = [];
+
+                if (stopObj.company === 'kmb') {
+                    const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/eta/${stopObj.stopId}/${stopObj.route}/1`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        etaList = data.data || [];
+                    }
+                } else {
+                    const res = await fetch(`https://rt.data.gov.hk/v2/transport/citybus/eta/CTB/${stopObj.stopId}/${stopObj.route}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        etaList = data.data || [];
+
+                        // 城巴 ETA 方向過濾 (O = outbound 去程, I = inbound 回程)
+                        if (etaList.length > 0) {
+                            const targetDir = (stopObj.bound === 'outbound') ? 'O' : 'I';
+                            const filteredDir = etaList.filter(e => !e.dir || e.dir.toUpperCase() === targetDir);
+                            if (filteredDir.length > 0) {
+                                etaList = filteredDir;
+                            }
+                        }
+                    }
+                }
+
+                refreshTime.textContent = `最後更新: ${new Date().toLocaleTimeString('zh-HK', { hour12: false })}`;
+
+                // Filter & Sort valid ETA entries
+                const validEtas = etaList.filter(e => e.eta).slice(0, 3);
+
+                if (validEtas.length === 0) {
+                    container.innerHTML = `
+                        <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-6 text-center text-slate-400">
+                            <i class="fa-solid fa-bus-simple text-3xl text-slate-600 mb-2"></i>
+                            <p class="text-base font-semibold">暫無即時到站預報班次</p>
+                            <p class="text-xs text-slate-500 mt-1">服務可能已關閉或目前非營運時段</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                container.innerHTML = validEtas.map((item, idx) => {
+                    const etaDate = new Date(item.eta);
+                    const diffMs = etaDate - new Date();
+                    const diffMins = Math.max(0, Math.floor(diffMs / 60000));
+                    const timeString = etaDate.toLocaleTimeString('zh-HK', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+                    let badgeBg = "bg-emerald-600/20 text-emerald-400 border-emerald-500/30";
+                    let minText = `${diffMins} 分鐘`;
+
+                    if (diffMins <= 1) {
+                        badgeBg = "bg-rose-600/30 text-rose-400 border-rose-500/50 animate-pulse";
+                        minText = "即將到達";
+                    }
+
+                    return `
+                        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-4 flex items-center justify-between shadow-md">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-lg bg-slate-800 text-slate-200 flex items-center justify-center font-bold text-sm">
+                                    ${idx + 1}
+                                </div>
+                                <div>
+                                    <div class="text-base font-bold text-slate-100">往 ${item.dest_tc || item.dest_en || '目的地'}</div>
+                                    <div class="text-xs text-slate-400 mt-0.5">${item.rmk_tc || '即時班次'}</div>
+                                </div>
+                            </div>
+                            <div class="text-end">
+                                <div class="inline-block px-3 py-1 rounded-lg border font-extrabold text-sm md:text-base ${badgeBg}">
+                                    ${minText}
+                                </div>
+                                <div class="text-xs text-slate-400 mt-1 font-mono">預計 ${timeString}</div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+            } catch (err) {
+                console.error("Failed fetching ETA:", err);
+                container.innerHTML = `<p class="text-center py-6 text-rose-400 text-sm">獲取到站預報失敗，請重試</p>`;
+            }
+        }
+
+        function openChangeStopModal() {
+            if (!currentActiveStop || currentRouteStops.length === 0) {
+                alert("請先選擇或搜尋一條路線車站");
+                return;
+            }
+
+            document.getElementById('changeStopModalSub').textContent = `路線 ${currentActiveStop.route} 全線共 ${currentRouteStops.length} 個車站`;
+            document.getElementById('changeStopSearchInput').value = '';
+
+            renderChangeStopList(currentRouteStops);
+            document.getElementById('changeStopModal').classList.remove('hidden');
+        }
+
+        function closeChangeStopModal() {
+            document.getElementById('changeStopModal').classList.add('hidden');
+        }
+
+        function filterChangeStops() {
+            const query = document.getElementById('changeStopSearchInput').value.trim().toUpperCase();
+            if (!query) {
+                renderChangeStopList(currentRouteStops);
+                return;
+            }
+
+            const filtered = currentRouteStops.filter(s => s.name.toUpperCase().includes(query));
+            renderChangeStopList(filtered);
+        }
+
+        function renderChangeStopList(stops) {
+            const select = document.getElementById('changeStopSelect');
+            const list = document.getElementById('changeStopListContainer');
+
+            let selectHtml = '<option value="">-- 下拉選擇車站 --</option>';
+            let listHtml = '';
+
+            stops.forEach(s => {
+                const isCurrent = currentActiveStop && currentActiveStop.stopId === s.stopId;
+                selectHtml += `<option value="${s.stopId}" ${isCurrent ? 'selected' : ''}>第 ${s.seq} 站：${s.name}</option>`;
+
+                listHtml += `
+                    <div onclick="confirmChangeStop('${s.stopId}')" class="p-3 ${isCurrent ? 'bg-indigo-900/40 border-indigo-500' : 'bg-slate-900 border-slate-800'} hover:bg-slate-800 border rounded-xl cursor-pointer flex items-center justify-between text-base">
+                        <div class="flex items-center gap-3">
+                            <span class="w-7 h-7 rounded-lg bg-slate-800 text-slate-300 flex items-center justify-center font-bold text-xs">${s.seq}</span>
+                            <span class="font-bold text-slate-100">${s.name} ${isCurrent ? '<span class="text-xs text-indigo-400 font-normal ml-1">(當前)</span>' : ''}</span>
+                        </div>
+                        <i class="fa-solid fa-angle-right text-slate-500 text-xs"></i>
+                    </div>
+                `;
+            });
+
+            select.innerHTML = selectHtml;
+            list.innerHTML = listHtml;
+        }
+
+        function onQuickChangeStopSelect() {
+            const stopId = document.getElementById('changeStopSelect').value;
+            if (stopId) {
+                confirmChangeStop(stopId);
+            }
+        }
+
+        function confirmChangeStop(stopId) {
+            closeChangeStopModal();
+            selectStopAndFetchETA(stopId);
+        }
+
+        function toggleFavorite() {
+            if (!currentActiveStop) return;
+
+            const idx = favorites.findIndex(f => f.stopId === currentActiveStop.stopId && f.route === currentActiveStop.route);
+            if (idx >= 0) {
+                favorites.splice(idx, 1);
+            } else {
+                favorites.push(currentActiveStop);
+            }
+
+            localStorage.setItem('hk_bus_favs', JSON.stringify(favorites));
+            updateFavoriteBtnState();
+            renderFavorites();
+        }
+
+        function updateFavoriteBtnState() {
+            if (!currentActiveStop) return;
+            const isFav = favorites.some(f => f.stopId === currentActiveStop.stopId && f.route === currentActiveStop.route);
+            
+            const favIcon = document.getElementById('favIcon');
+            const favBtnText = document.getElementById('favBtnText');
+
+            if (isFav) {
+                favIcon.className = "fa-solid fa-star text-amber-400";
+                favBtnText.textContent = "已收藏";
+            } else {
+                favIcon.className = "fa-regular fa-star text-amber-400";
+                favBtnText.textContent = "加入收藏";
+            }
+        }
+
+        function renderFavorites() {
+            const container = document.getElementById('favoritesSection');
+            if (favorites.length === 0) {
+                container.innerHTML = `
+                    <div class="col-span-full text-center py-6 text-slate-500 text-sm">
+                        暫無收藏的巴士站，查詢車站時點擊「加入收藏」即可儲存
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = favorites.map(f => `
+                <div onclick='loadFavoriteItem(${JSON.stringify(f).replace(/'/g, "&apos;")})' class="bg-slate-950/80 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 rounded-xl p-3.5 cursor-pointer transition flex items-center justify-between">
+                    <div>
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="text-xs font-bold px-2 py-0.5 rounded ${f.company==='kmb'?'bg-rose-600/30 text-rose-300':'bg-amber-500/30 text-amber-300'}">
+                                ${f.company==='kmb'?'九巴':'城巴'} ${f.route}
+                            </span>
+                            <span class="text-xs text-slate-400">第 ${f.seq} 站</span>
+                        </div>
+                        <div class="font-bold text-slate-100 text-base">${f.name}</div>
+                    </div>
+                    <i class="fa-solid fa-chevron-right text-slate-500 text-xs"></i>
+                </div>
+            `).join('');
+        }
+
+        function loadFavoriteItem(favObj) {
+            currentActiveStop = favObj;
+
+            const companyTag = document.getElementById('displayCompanyTag');
+            companyTag.textContent = favObj.company === 'kmb' ? '九龍巴士 (KMB)' : '城巴 (Citybus)';
+            companyTag.className = favObj.company === 'kmb' ? 'bg-rose-600 text-white text-xs font-bold px-2.5 py-1 rounded-md' : 'bg-amber-500 text-slate-950 text-xs font-extrabold px-2.5 py-1 rounded-md';
+
+            document.getElementById('displayRouteSeq').textContent = `路線 ${favObj.route} (第 ${favObj.seq || 1} 站)`;
+            document.getElementById('displayStopName').textContent = favObj.name;
+            document.getElementById('displayBoundInfo').textContent = `收藏車站 - 路線 ${favObj.route}`;
+
+            updateFavoriteBtnState();
+            fetchETA(favObj);
+        }
+
+        function openSearchModal() {
+            document.getElementById('busSearchModal').classList.remove('hidden');
+        }
+
+        function closeSearchModal() {
+            document.getElementById('busSearchModal').classList.add('hidden');
+        }
+
+        function openAiModal() {
+            document.getElementById('aiAssistantModal').classList.remove('hidden');
+        }
+
+        function closeAiModal() {
+            document.getElementById('aiAssistantModal').classList.add('hidden');
+        }
+
+        function sendAiMessage() {
+            const input = document.getElementById('aiInput');
+            const chatBox = document.getElementById('aiChatBox');
+            const text = input.value.trim();
+
+            if (!text) return;
+
+            // User message bubble
+            chatBox.innerHTML += `
+                <div class="flex justify-end">
+                    <div class="bg-indigo-600 text-white rounded-2xl p-3.5 max-w-[85%] text-sm shadow">
+                        ${text}
+                    </div>
+                </div>
+            `;
+
+            input.value = '';
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            // Simulated AI Response
+            setTimeout(() => {
+                let aiReply = "感謝查詢！在香港乘搭巴士，建議您善用九巴與城巴的大欖隧道及西區海底隧道轉車站點進行跨區轉乘。";
+                if (text.includes("銅鑼灣")) {
+                    aiReply = "前往銅鑼灣：從新界西出發可乘搭 968 直達天后及銅鑼灣；從九龍出發可乘搭 102、112 隧巴路線。";
+                } else if (text.includes("968")) {
+                    aiReply = "九巴 968 號線為元朗(西)至銅鑼灣(天后)之過海特快路線，途經大欖隧道及西區海底隧道，為新界西主要幹線路線之一。";
+                }
+
+                chatBox.innerHTML += `
+                    <div class="flex justify-start">
+                        <div class="bg-slate-800 border border-slate-700 text-slate-200 rounded-2xl p-3.5 max-w-[85%] text-sm">
+                            ${aiReply}
+                        </div>
+                    </div>
+                `;
+                chatBox.scrollTop = chatBox.scrollHeight;
+            }, 600);
+        }
+    </script>
+</body>
+</html>
