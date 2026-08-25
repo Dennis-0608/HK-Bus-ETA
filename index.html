@@ -130,14 +130,20 @@
 
         <!-- Real-time ETA Arrival List Container -->
         <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 md:p-5 shadow-xl">
-            <div class="flex items-center justify-between border-b border-slate-800 pb-2.5 mb-3">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-2.5 mb-3 flex-wrap gap-2">
                 <h3 class="text-base md:text-lg font-bold text-slate-200 flex items-center gap-2">
                     <i class="fa-regular fa-clock text-rose-500"></i>
                     <span>即時到站時間 (ETA)</span>
                 </h3>
                 <div class="flex items-center gap-3">
                     <span id="autoRefreshCountdown" class="text-xs text-indigo-400 font-mono hidden bg-indigo-950/60 border border-indigo-500/30 px-2 py-0.5 rounded">自動更新: <span id="countdownSec">30</span>s</span>
-                    <span id="etaRefreshTime" class="text-xs md:text-sm text-slate-400 font-mono">最後更新: --:--:--</span>
+                    <div class="flex items-center gap-2">
+                        <span id="etaRefreshTime" class="text-xs md:text-sm text-slate-400 font-mono">最後更新: --:--:--</span>
+                        <button onclick="manualRefreshETA()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 shadow transition active:scale-95" title="立即重新整理到站時間">
+                            <i class="fa-solid fa-rotate-right text-[10px]" id="refreshIcon"></i>
+                            <span>立即更新</span>
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -764,33 +770,52 @@
             updateFavoriteBtnState();
             closeSearchModal();
 
-            // 啟動 30 秒自動更新機制
+            // 啟動 30 秒自動更新機制 (背景默默執行，不再顯示倒數標籤)
             startAutoRefreshTimer(stopObj);
 
             await fetchETA(stopObj);
         }
 
-        // 啟動每 30 秒自動更新計時器
+        // 手動點擊「立即更新」按鈕執行的函數
+        async function manualRefreshETA() {
+            if (!currentActiveStop) {
+                alert("請先選擇或搜尋巴士站！");
+                return;
+            }
+
+            const refreshIcon = document.getElementById('refreshIcon');
+            if (refreshIcon) refreshIcon.classList.add('fa-spin');
+
+            // 重新執行一次數據抓取
+            await fetchETA(currentActiveStop);
+
+            // 重新計時器歸零
+            startAutoRefreshTimer(currentActiveStop);
+
+            setTimeout(() => {
+                if (refreshIcon) refreshIcon.classList.remove('fa-spin');
+            }, 600);
+        }
+
+        // 啟動每 30 秒自動更新計時器 (背景執行)
         function startAutoRefreshTimer(stopObj) {
-            // 清除現有的計時器，避免疊加
             if (autoRefreshTimer) clearInterval(autoRefreshTimer);
             if (countdownTimer) clearInterval(countdownTimer);
 
             countdownSeconds = 30;
+            // 保持隱藏自動更新的倒數標籤
             const countdownEl = document.getElementById('autoRefreshCountdown');
-            const secSpan = document.getElementById('countdownSec');
-            if (countdownEl) countdownEl.classList.remove('hidden');
+            if (countdownEl) countdownEl.classList.add('hidden');
 
-            // 倒數計時每秒更新數字
+            // 背景倒數（保留邏輯以維持自動重新整理功能）
             countdownTimer = setInterval(() => {
                 countdownSeconds--;
-                if (secSpan) secSpan.textContent = countdownSeconds;
                 if (countdownSeconds <= 0) {
                     countdownSeconds = 30;
                 }
             }, 1000);
 
-            // 每 30 秒自動調用一次 fetchETA 重新整理資料
+            // 每 30 秒自動背景更新一次
             autoRefreshTimer = setInterval(async () => {
                 if (currentActiveStop && currentActiveStop.stopId === stopObj.stopId) {
                     await fetchETA(stopObj, true); // 靜默更新
