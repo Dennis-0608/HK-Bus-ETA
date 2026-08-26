@@ -775,10 +775,12 @@
             if (matchDest && matchDest[1]) {
                 destName = matchDest[1];
             } else {
-                destName = boundLabel.replace(/^往\s*/, '').split(' ')[0] || '目的地';
+                destName = boundLabel.replace(/^往\s*/, '').split(' ')[0] || '';
             }
 
-            document.getElementById('displayBoundInfo').textContent = `${stopObj.route} 往 ${destName}`;
+            // 修正點 1: 保存目的地名稱至車站物件中
+            stopObj.destName = destName;
+            document.getElementById('displayBoundInfo').textContent = `${stopObj.route} 往 ${destName || '目的地'}`;
 
             updateFavoriteBtnState();
             closeSearchModal();
@@ -863,6 +865,16 @@
                     const etaDate = new Date(e.eta);
                     return (etaDate - nowTime) > -30000;
                 }).slice(0, 3);
+
+                // 修正點 2: 當獲取到即時 ETA API 數據時，自動將標頭更新為 API 實時返回的真正終點站名稱 (例如：慈雲山(中))
+                if (validEtas.length > 0 && validEtas[0].dest_tc) {
+                    const apiDest = validEtas[0].dest_tc;
+                    if (currentActiveStop) currentActiveStop.destName = apiDest;
+                    const boundInfoEl = document.getElementById('displayBoundInfo');
+                    if (boundInfoEl && stopObj) {
+                        boundInfoEl.textContent = `${stopObj.route} 往 ${apiDest}`;
+                    }
+                }
 
                 if (validEtas.length === 0) {
                     container.innerHTML = `
@@ -1078,8 +1090,13 @@
             const stopNameEl = document.getElementById('displayStopName');
             if (stopNameEl) stopNameEl.textContent = favObj.name;
 
+            // 修正點 3: 不再寫死 "目的地"，優先顯示已記錄的 destName
             const boundInfoEl = document.getElementById('displayBoundInfo');
-            if (boundInfoEl) boundInfoEl.textContent = `${favObj.route} 往 目的地`;
+            if (boundInfoEl) {
+                boundInfoEl.textContent = favObj.destName 
+                    ? `${favObj.route} 往 ${favObj.destName}` 
+                    : `${favObj.route} 往 載入中...`;
+            }
 
             updateFavoriteBtnState();
             startAutoRefreshTimer(favObj);
