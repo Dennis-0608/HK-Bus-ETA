@@ -639,10 +639,10 @@
             const stopSelect = document.getElementById('modalStopSelect');
             const stopList = document.getElementById('modalStopList');
 
-            stopHeader.textContent = '正在下載全線站點數據...';
-            stopList.innerHTML = '<p class="text-sm text-indigo-400 text-center py-4"><i class="fa-solid fa-spinner fa-spin mr-2"></i>連線至政府數據庫載入站點名單...</p>';
+            if (stopHeader) stopHeader.textContent = '正在下載全線站點數據...';
+            if (stopList) stopList.innerHTML = '<p class="text-sm text-indigo-400 text-center py-4"><i class="fa-solid fa-spinner fa-spin mr-2"></i>連線至政府數據庫載入站點名單...</p>';
 
-            let normBound = bound;
+            let normBound = bound || 'outbound';
             if (bound === 'O') normBound = 'outbound';
             if (bound === 'I') normBound = 'inbound';
 
@@ -650,7 +650,7 @@
                 let rawStops = [];
 
                 if (company === 'kmb') {
-                    const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route-stop/${routeNum}/${normBound}/${serviceType}`);
+                    const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route-stop/${routeNum}/${normBound}/${serviceType || '1'}`);
                     if (res.ok) {
                         const data = await res.json();
                         rawStops = data.data || [];
@@ -664,8 +664,9 @@
                 }
 
                 if (rawStops.length === 0) {
-                    stopHeader.textContent = '該路線全線所有停靠站點 (無資料)';
-                    stopList.innerHTML = '<p class="text-sm text-amber-500 text-center py-4">無法載入此路線之車站列表</p>';
+                    if (stopHeader) stopHeader.textContent = '該路線全線所有停靠站點 (無資料)';
+                    if (stopList) stopList.innerHTML = '<p class="text-sm text-amber-500 text-center py-4">無法載入此路線之車站列表</p>';
+                    currentRouteStops = [];
                     return;
                 }
 
@@ -683,34 +684,36 @@
                     };
                 }));
 
-                stopHeader.textContent = `該路線全線所有停靠站點 (全線共 ${currentRouteStops.length} 個站)：`;
+                if (stopHeader) stopHeader.textContent = `該路線全線所有停靠站點 (全線共 ${currentRouteStops.length} 個站)：`;
                 
-                let selectOptions = `<option value="">-- 下拉選單選擇車站 (共 ${currentRouteStops.length} 站) --</option>`;
-                let listHtml = '';
+                if (stopSelect && stopList) {
+                    let selectOptions = `<option value="">-- 下拉選單選擇車站 (共 ${currentRouteStops.length} 站) --</option>`;
+                    let listHtml = '';
 
-                currentRouteStops.forEach(s => {
-                    selectOptions += `<option value="${s.stopId}">第 ${s.seq} 站：${s.name}</option>`;
-                    listHtml += `
-                        <div onclick="selectStopAndFetchETA('${s.stopId}')" class="p-3 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl cursor-pointer flex items-center justify-between text-base transition">
-                            <div class="flex items-center gap-3">
-                                <span class="w-7 h-7 rounded-lg bg-slate-800 text-slate-300 flex items-center justify-center font-mono font-bold text-xs">${s.seq}</span>
-                                <span class="font-bold text-slate-100">${s.name}</span>
+                    currentRouteStops.forEach(s => {
+                        selectOptions += `<option value="${s.stopId}">第 ${s.seq} 站：${s.name}</option>`;
+                        listHtml += `
+                            <div onclick="selectStopAndFetchETA('${s.stopId}')" class="p-3 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl cursor-pointer flex items-center justify-between text-base transition">
+                                <div class="flex items-center gap-3">
+                                    <span class="w-7 h-7 rounded-lg bg-slate-800 text-slate-300 flex items-center justify-center font-mono font-bold text-xs">${s.seq}</span>
+                                    <span class="font-bold text-slate-100">${s.name}</span>
+                                </div>
+                                <span class="text-xs text-indigo-400 font-semibold flex items-center gap-1">
+                                    <span>查看即時</span>
+                                    <i class="fa-solid fa-chevron-right text-[10px]"></i>
+                                </span>
                             </div>
-                            <span class="text-xs text-indigo-400 font-semibold flex items-center gap-1">
-                                <span>查看即時</span>
-                                <i class="fa-solid fa-chevron-right text-[10px]"></i>
-                            </span>
-                        </div>
-                    `;
-                });
+                        `;
+                    });
 
-                stopSelect.innerHTML = selectOptions;
-                stopList.innerHTML = listHtml;
+                    stopSelect.innerHTML = selectOptions;
+                    stopList.innerHTML = listHtml;
+                }
 
             } catch (err) {
                 console.error("Error fetching route stops:", err);
-                stopHeader.textContent = '該路線全線所有停靠站點 (載入失敗)';
-                stopList.innerHTML = '<p class="text-sm text-rose-500 text-center py-4">數據連線失敗，請重試</p>';
+                if (stopHeader) stopHeader.textContent = '該路線全線所有停靠站點 (載入失敗)';
+                if (stopList) stopList.innerHTML = '<p class="text-sm text-rose-500 text-center py-4">數據連線失敗，請重試</p>';
             }
         }
 
@@ -1008,7 +1011,7 @@
 
         function renderFavorites() {
             const container = document.getElementById('favoritesSection');
-            if (favorites.length === 0) {
+            if (!favorites || favorites.length === 0) {
                 container.innerHTML = `
                     <div class="col-span-full text-center py-6 text-slate-500 text-sm">
                         暫無收藏的巴士站，查詢車站時點擊「加入收藏」即可儲存
@@ -1017,42 +1020,96 @@
                 return;
             }
 
-            container.innerHTML = favorites.map(f => `
-                <div onclick='loadFavoriteItem(${JSON.stringify(f).replace(/'/g, "&apos;")})' class="bg-slate-950/80 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 rounded-xl p-3.5 cursor-pointer transition flex items-center justify-between">
-                    <div>
-                        <div class="flex items-center gap-2 mb-1">
-                            <span class="text-xs font-bold px-2 py-0.5 rounded ${f.company==='kmb'?'bg-rose-600/30 text-rose-300':'bg-amber-500/30 text-amber-300'}">
-                                ${f.company==='kmb'?'九巴':'城巴'} ${f.route}
-                            </span>
-                            <span class="text-xs text-slate-400">第 ${f.seq} 站</span>
+            container.innerHTML = favorites.map((fav, index) => {
+                const companyBadge = fav.company === 'kmb' 
+                    ? '<span class="bg-rose-600 text-white text-[10px] font-bold px-2 py-0.5 rounded">九巴</span>'
+                    : '<span class="bg-amber-500 text-slate-950 text-[10px] font-extrabold px-2 py-0.5 rounded">城巴</span>';
+
+                return `
+                    <div class="bg-slate-950/80 border border-slate-800 hover:border-indigo-500/50 p-3.5 rounded-xl flex items-center justify-between transition cursor-pointer group" onclick="loadFavoriteItemByIndex(${index})">
+                        <div class="flex flex-col gap-1 overflow-hidden mr-2">
+                            <div class="flex items-center gap-2">
+                                ${companyBadge}
+                                <span class="font-extrabold text-indigo-400 text-base">路線 ${fav.route}</span>
+                            </div>
+                            <div class="font-bold text-slate-100 text-sm truncate">${fav.name}</div>
                         </div>
-                        <div class="font-bold text-slate-100 text-base">${f.name}</div>
+                        <div class="flex items-center gap-2">
+                            <button onclick="event.stopPropagation(); removeFavoriteByIndex(${index})" class="text-slate-500 hover:text-rose-400 p-2 rounded-lg transition" title="刪除收藏">
+                                <i class="fa-solid fa-trash-can text-sm"></i>
+                            </button>
+                            <i class="fa-solid fa-chevron-right text-xs text-slate-500 group-hover:text-indigo-400 group-hover:translate-x-0.5 transition-transform"></i>
+                        </div>
                     </div>
-                    <i class="fa-solid fa-chevron-right text-slate-500 text-xs"></i>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
 
-        function loadFavoriteItem(favObj) {
+        function loadFavoriteItemByIndex(index) {
+            if (favorites[index]) {
+                loadFavoriteItem(favorites[index]);
+            }
+        }
+
+        function removeFavoriteByIndex(index) {
+            if (favorites[index]) {
+                favorites.splice(index, 1);
+                localStorage.setItem('hk_bus_favs', JSON.stringify(favorites));
+                updateFavoriteBtnState();
+                renderFavorites();
+            }
+        }
+
+        async function loadFavoriteItem(favObj) {
             currentActiveStop = favObj;
 
             const activeCard = document.getElementById('activeStopCard');
             if (activeCard) activeCard.classList.remove('hidden');
 
             const companyTag = document.getElementById('displayCompanyTag');
-            companyTag.textContent = favObj.company === 'kmb' ? '九龍巴士 (KMB)' : '城巴 (Citybus)';
-            companyTag.className = favObj.company === 'kmb' ? 'bg-rose-600 text-white text-xs font-bold px-2.5 py-1 rounded-md' : 'bg-amber-500 text-slate-950 text-xs font-extrabold px-2.5 py-1 rounded-md';
+            if (companyTag) {
+                companyTag.textContent = favObj.company === 'kmb' ? '九龍巴士 (KMB)' : '城巴 (Citybus)';
+                companyTag.className = favObj.company === 'kmb' ? 'bg-rose-600 text-white text-xs font-bold px-2.5 py-1 rounded-md' : 'bg-amber-500 text-slate-950 text-xs font-extrabold px-2.5 py-1 rounded-md';
+            }
 
-            document.getElementById('displayRouteSeq').textContent = `路線 ${favObj.route} (第 ${favObj.seq || 1} 站)`;
-            document.getElementById('displayStopName').textContent = favObj.name;
-            document.getElementById('displayBoundInfo').textContent = `${favObj.route} 往 目的地`;
+            const routeSeqEl = document.getElementById('displayRouteSeq');
+            if (routeSeqEl) routeSeqEl.textContent = `路線 ${favObj.route} (第 ${favObj.seq || 1} 站)`;
+
+            const stopNameEl = document.getElementById('displayStopName');
+            if (stopNameEl) stopNameEl.textContent = favObj.name;
+
+            const boundInfoEl = document.getElementById('displayBoundInfo');
+            if (boundInfoEl) boundInfoEl.textContent = `${favObj.route} 往 目的地`;
 
             updateFavoriteBtnState();
             startAutoRefreshTimer(favObj);
             fetchETA(favObj);
+
+            // 解決問題 1：開啟收藏車站時，非同步預載該路線全線站點，供「更改車站」功能使用
+            await fetchRouteStops(favObj.company, favObj.route, favObj.bound, favObj.serviceType || '1');
+        }
+
+        function resetSearchModal() {
+            // 解決問題 2：清空搜尋框與選取狀態，確保每次開啟「巴士站查詢」都是全新狀態
+            document.getElementById('modalCompanySelect').value = 'kmb';
+            buildRouteMap('kmb');
+
+            const routeInput = document.getElementById('routeSearchInput');
+            if (routeInput) routeInput.value = '';
+
+            const dropdown = document.getElementById('routeAutocompleteDropdown');
+            if (dropdown) {
+                dropdown.innerHTML = '';
+                dropdown.classList.add('hidden');
+            }
+
+            selectedRoute = null;
+            selectedBound = null;
+            clearAllStopData();
         }
 
         function openSearchModal() {
+            resetSearchModal();
             document.getElementById('busSearchModal').classList.remove('hidden');
         }
 
