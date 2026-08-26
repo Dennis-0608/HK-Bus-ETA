@@ -108,12 +108,14 @@
                 <div class="flex items-center justify-between gap-2">
                     <div class="flex items-center gap-2">
                         <span id="displayCompanyTag" class="bg-rose-600 text-white text-xs font-bold px-2.5 py-1 rounded-md tracking-wider">九龍巴士 (KMB)</span>
-                        <span id="displayRouteSeq" class="bg-slate-800 text-slate-300 text-xs font-semibold px-2.5 py-1 rounded-md">路線 -- (第 1 站)</span>
+                        <!-- 需求 1: 隱藏路線與站序標籤 -->
+                        <span id="displayRouteSeq" class="hidden">路線 -- (第 1 站)</span>
                     </div>
                 </div>
                 <div>
+                    <!-- 需求 2: 將方向資訊移到車站上方，格式改為 "3D 往 慈雲山(中)"，並字體增加 2px -->
+                    <p id="displayBoundInfo" class="text-base md:text-lg font-semibold text-indigo-400 mb-1">尚未選擇路線與行車方向</p>
                     <h2 id="displayStopName" class="text-2xl md:text-3xl font-extrabold text-white tracking-tight">請選擇或搜尋巴士站號</h2>
-                    <p id="displayBoundInfo" class="text-sm md:text-base text-slate-400 mt-1">尚未選擇路線與行車方向</p>
                 </div>
 
                 <!-- Action Buttons: Favorite & Change Station (Side by Side & Compact) -->
@@ -763,7 +765,17 @@
             
             const boundSelect = document.getElementById('modalBoundSelect');
             const boundLabel = boundSelect.options[boundSelect.selectedIndex] ? boundSelect.options[boundSelect.selectedIndex].text : '';
-            document.getElementById('displayBoundInfo').textContent = boundLabel;
+            
+            // 解析目標目的地名稱（例如從 "往 慈雲山(中) (由 觀塘(裕民坊) 開出)" 提取 "慈雲山(中)"）
+            let destName = "";
+            const matchDest = boundLabel.match(/往\s+([^\s(]+(?:\([^)]+\))?)/);
+            if (matchDest && matchDest[1]) {
+                destName = matchDest[1];
+            } else {
+                destName = boundLabel.replace(/^往\s*/, '').split(' ')[0] || '目的地';
+            }
+
+            document.getElementById('displayBoundInfo').textContent = `${stopObj.route} 往 ${destName}`;
 
             updateFavoriteBtnState();
             closeSearchModal();
@@ -1033,7 +1045,7 @@
 
             document.getElementById('displayRouteSeq').textContent = `路線 ${favObj.route} (第 ${favObj.seq || 1} 站)`;
             document.getElementById('displayStopName').textContent = favObj.name;
-            document.getElementById('displayBoundInfo').textContent = `收藏車站 - 路線 ${favObj.route}`;
+            document.getElementById('displayBoundInfo').textContent = `${favObj.route} 往 目的地`;
 
             updateFavoriteBtnState();
             startAutoRefreshTimer(favObj);
