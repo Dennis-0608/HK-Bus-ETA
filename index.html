@@ -104,23 +104,25 @@
 
         <!-- Active Bus Stop Info Card -->
         <div id="activeStopCard" class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl relative overflow-hidden hidden">
-            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                    <div class="flex items-center gap-2 mb-2">
+            <div class="flex flex-col gap-3">
+                <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2">
                         <span id="displayCompanyTag" class="bg-rose-600 text-white text-xs font-bold px-2.5 py-1 rounded-md tracking-wider">九龍巴士 (KMB)</span>
                         <span id="displayRouteSeq" class="bg-slate-800 text-slate-300 text-xs font-semibold px-2.5 py-1 rounded-md">路線 -- (第 1 站)</span>
                     </div>
+                </div>
+                <div>
                     <h2 id="displayStopName" class="text-2xl md:text-3xl font-extrabold text-white tracking-tight">請選擇或搜尋巴士站號</h2>
                     <p id="displayBoundInfo" class="text-sm md:text-base text-slate-400 mt-1">尚未選擇路線與行車方向</p>
                 </div>
 
-                <!-- Action Buttons: Favorite & Change Station -->
-                <div class="flex flex-col sm:flex-row md:flex-col gap-2 shrink-0">
-                    <button id="favBtn" onclick="toggleFavorite()" class="bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 font-semibold px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 transition text-sm">
+                <!-- Action Buttons: Favorite & Change Station (Side by Side & Compact) -->
+                <div class="grid grid-cols-2 gap-2 pt-1">
+                    <button id="favBtn" onclick="toggleFavorite()" class="bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 font-semibold px-3 py-2 rounded-xl flex items-center justify-center gap-1.5 transition text-sm">
                         <i id="favIcon" class="fa-regular fa-star"></i>
                         <span id="favBtnText">加入收藏</span>
                     </button>
-                    <button id="changeStopBtn" onclick="openChangeStopModal()" class="bg-indigo-900/40 hover:bg-indigo-800/60 text-indigo-300 border border-indigo-500/40 font-semibold px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 transition text-sm">
+                    <button id="changeStopBtn" onclick="openChangeStopModal()" class="bg-indigo-900/40 hover:bg-indigo-800/60 text-indigo-300 border border-indigo-500/40 font-semibold px-3 py-2 rounded-xl flex items-center justify-center gap-1.5 transition text-sm">
                         <i class="fa-solid fa-arrows-rotate text-xs"></i>
                         <span>更改車站</span>
                     </button>
@@ -135,15 +137,12 @@
                     <i class="fa-regular fa-clock text-rose-500"></i>
                     <span>即時到站時間 (ETA)</span>
                 </h3>
-                <div class="flex items-center gap-3">
-                    <span id="autoRefreshCountdown" class="text-xs text-indigo-400 font-mono hidden bg-indigo-950/60 border border-indigo-500/30 px-2 py-0.5 rounded">自動更新: <span id="countdownSec">30</span>s</span>
-                    <div class="flex items-center gap-2">
-                        <span id="etaRefreshTime" class="text-xs md:text-sm text-slate-400 font-mono">最後更新: --:--:--</span>
-                        <button onclick="manualRefreshETA()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 shadow transition active:scale-95" title="立即重新整理到站時間">
-                            <i class="fa-solid fa-rotate-right text-[10px]" id="refreshIcon"></i>
-                            <span>立即更新</span>
-                        </button>
-                    </div>
+                <div class="flex items-center gap-2">
+                    <span id="etaRefreshTime" class="text-xs md:text-sm text-slate-400 font-mono">最後更新: --:--:--</span>
+                    <button onclick="manualRefreshETA()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 shadow transition active:scale-95" title="立即重新整理到站時間">
+                        <i class="fa-solid fa-rotate-right text-[10px]" id="refreshIcon"></i>
+                        <span>立即更新</span>
+                    </button>
                 </div>
             </div>
 
@@ -337,10 +336,8 @@
 
         // Auto Refresh Timer Variables (30 seconds interval)
         let autoRefreshTimer = null;
-        let countdownTimer = null;
-        let countdownSeconds = 30;
 
-        // HK Districts coordinates mapped to HKO stations
+        // Accurate HKO weather stations with precise coordinates
         const hkDistricts = [
             { name: '尖沙咀', hkoName: '香港天文台', lat: 22.3019, lng: 114.1742 },
             { name: '中環', hkoName: '香港公園', lat: 22.2780, lng: 114.1580 },
@@ -348,7 +345,9 @@
             { name: '沙田', hkoName: '沙田', lat: 22.3833, lng: 114.1833 },
             { name: '屯門', hkoName: '屯門', lat: 22.3917, lng: 113.9714 },
             { name: '元朗', hkoName: '濕地公園', lat: 22.4600, lng: 114.0000 },
-            { name: '荃灣', hkoName: '荃灣城門谷', lat: 22.3733, lng: 114.1167 }
+            { name: '荃灣', hkoName: '荃灣城門谷', lat: 22.3733, lng: 114.1167 },
+            { name: '黃大仙', hkoName: '黃大仙', lat: 22.3350, lng: 114.1917 },
+            { name: '深水埗', hkoName: '深水埗', lat: 22.3300, lng: 114.1600 }
         ];
 
         window.onload = async function() {
@@ -369,13 +368,7 @@
             });
         };
 
-        function updateSyncTimestamp() {
-            const now = new Date();
-            const timeStr = now.toLocaleTimeString('zh-HK', { hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            const syncEl = document.getElementById('headerSyncTime');
-            if (syncEl) syncEl.textContent = timeStr;
-        }
-
+        // 修正 GPS 定位與天氣配對邏輯
         async function fetchWeatherAndLocation() {
             const gpsIcon = document.getElementById('gpsStatusIcon');
             const locEl = document.getElementById('weatherLocation');
@@ -390,8 +383,8 @@
                 try {
                     const pos = await new Promise((resolve, reject) => {
                         navigator.geolocation.getCurrentPosition(resolve, reject, {
-                            timeout: 5000,
-                            maximumAge: 60000,
+                            timeout: 7000,
+                            maximumAge: 30000,
                             enableHighAccuracy: true
                         });
                     });
@@ -401,7 +394,8 @@
 
                     let minDist = Infinity;
                     hkDistricts.forEach(d => {
-                        const dist = Math.pow(d.lat - lat, 2) + Math.pow(d.lng - lng, 2);
+                        // 使用歐幾里得距離精確匹配最近的天文台測站
+                        const dist = Math.sqrt(Math.pow(d.lat - lat, 2) + Math.pow(d.lng - lng, 2));
                         if (dist < minDist) {
                             minDist = dist;
                             userDistrict = d;
@@ -428,6 +422,7 @@
                     let matchedTemp = null;
 
                     if (userDistrict) {
+                        // 嘗試精準對應天文台返回的測站名稱
                         const targetItem = tempArr.find(t => t.place === userDistrict.hkoName || t.place.includes(userDistrict.name));
                         if (targetItem) {
                             matchedTemp = targetItem.value;
@@ -436,7 +431,7 @@
                     }
 
                     if (matchedTemp === null) {
-                        const hkoItem = tempArr.find(t => t.place === '香港天文台' || t.place === '京士柏') || tempArr[0];
+                        const hkoItem = tempArr.find(t => t.place === '香港天文台') || tempArr[0];
                         matchedTemp = hkoItem ? hkoItem.value : 28;
                         if (!userDistrict) locEl.textContent = "香港";
                     }
@@ -448,7 +443,10 @@
                 locEl.textContent = "香港";
             }
 
-            updateSyncTimestamp();
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('zh-HK', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const syncEl = document.getElementById('headerSyncTime');
+            if (syncEl) syncEl.textContent = timeStr;
         }
 
         function getHkoWeatherEmoji(code) {
@@ -770,13 +768,10 @@
             updateFavoriteBtnState();
             closeSearchModal();
 
-            // 啟動 30 秒自動更新機制 (背景默默執行，不再顯示倒數標籤)
             startAutoRefreshTimer(stopObj);
-
             await fetchETA(stopObj);
         }
 
-        // 手動點擊「立即更新」按鈕執行的函數
         async function manualRefreshETA() {
             if (!currentActiveStop) {
                 alert("請先選擇或搜尋巴士站！");
@@ -786,10 +781,7 @@
             const refreshIcon = document.getElementById('refreshIcon');
             if (refreshIcon) refreshIcon.classList.add('fa-spin');
 
-            // 重新執行一次數據抓取
             await fetchETA(currentActiveStop);
-
-            // 重新計時器歸零
             startAutoRefreshTimer(currentActiveStop);
 
             setTimeout(() => {
@@ -797,28 +789,12 @@
             }, 600);
         }
 
-        // 啟動每 30 秒自動更新計時器 (背景執行)
         function startAutoRefreshTimer(stopObj) {
             if (autoRefreshTimer) clearInterval(autoRefreshTimer);
-            if (countdownTimer) clearInterval(countdownTimer);
 
-            countdownSeconds = 30;
-            // 保持隱藏自動更新的倒數標籤
-            const countdownEl = document.getElementById('autoRefreshCountdown');
-            if (countdownEl) countdownEl.classList.add('hidden');
-
-            // 背景倒數（保留邏輯以維持自動重新整理功能）
-            countdownTimer = setInterval(() => {
-                countdownSeconds--;
-                if (countdownSeconds <= 0) {
-                    countdownSeconds = 30;
-                }
-            }, 1000);
-
-            // 每 30 秒自動背景更新一次
             autoRefreshTimer = setInterval(async () => {
                 if (currentActiveStop && currentActiveStop.stopId === stopObj.stopId) {
-                    await fetchETA(stopObj, true); // 靜默更新
+                    await fetchETA(stopObj, true);
                 }
             }, 30000);
         }
@@ -859,18 +835,17 @@
                     }
                 }
 
-                const currentTimestamp = new Date().toLocaleTimeString('zh-HK', { hour12: false });
+                const currentTimestamp = new Date().toLocaleTimeString('zh-HK', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
                 refreshTime.textContent = `最後更新: ${currentTimestamp}`;
                 
                 const syncEl = document.getElementById('headerSyncTime');
-                if (syncEl) syncEl.textContent = new Date().toLocaleTimeString('zh-HK', { hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                if (syncEl) syncEl.textContent = new Date().toLocaleTimeString('zh-HK', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-                // 專家修改：過濾掉已經過期（即到達時間小於當前時間）的班次，並最多只取前 3 個有效班次
+                // 精確過濾已過期班次（容許最多 30 秒誤差），取前 3 個最新班次
                 const nowTime = new Date();
                 const validEtas = etaList.filter(e => {
                     if (!e.eta) return false;
                     const etaDate = new Date(e.eta);
-                    // 容許最多過期 30 秒以內的誤差，確保準確度
                     return (etaDate - nowTime) > -30000;
                 }).slice(0, 3);
 
@@ -1094,7 +1069,6 @@
             alert("Gemini API Key 已成功儲存！");
         }
 
-        // Real Gemini API Integration
         async function sendAiMessage() {
             const input = document.getElementById('aiInput');
             const chatBox = document.getElementById('aiChatBox');
@@ -1104,7 +1078,6 @@
 
             if (!text) return;
 
-            // Append user bubble
             chatBox.innerHTML += `
                 <div class="flex justify-end">
                     <div class="bg-indigo-600 text-white rounded-2xl p-3.5 max-w-[85%] text-sm shadow">
@@ -1116,7 +1089,6 @@
             input.value = '';
             chatBox.scrollTop = chatBox.scrollHeight;
 
-            // Loading state
             sendBtn.disabled = true;
             sendIcon.className = "fa-solid fa-spinner fa-spin";
 
@@ -1165,7 +1137,7 @@
                     } else if (text.includes("機場") || text.includes("A11") || text.includes("A31")) {
                         aiResponseText = "前往香港國際機場：您可以選乘城巴 A 系列機場巴士（如港島區 A11、新界區 A31 等），車程舒適並設有大型行李架。建議出發前查看即時到站時間以避開等車時間。";
                     } else {
-                        aiResponseText = `關於「${text}」：香港公共交通網絡完善，建議您透過上方的「巴士站查詢」輸入具體路線號碼（如 1A, 968, A11），即可獲取最準確的即時到站時間與全線站點資訊！(提示：點擊右上方「設定金鑰」可連接你自己的 Gemini API Key 獲取無限制 AI 智能對話)`;
+                        aiResponseText = `關於「${text}」：香港公共交通網絡完善，建議您透過上方的「巴士站查詢」輸入具體路線號碼（如 1A, 968, A11），即可獲取最準確的即時到站時間與全線站點資訊！`;
                     }
                 }
 
