@@ -254,7 +254,7 @@
                     <div id="gpsStopsList" class="space-y-2">
                         <div class="text-center py-8 text-slate-500">
                             <i class="fa-solid fa-route text-3xl mb-2 text-slate-700"></i>
-                            <p class="text-xs font-medium">點擊「重新定位」即可直觀列出附近所有巴士號碼</p>
+                            <p class="text-xs font-medium">點擊「重新定位」即可直觀列出附近九巴及城巴路線</p>
                         </div>
                     </div>
                 </div>
@@ -301,17 +301,20 @@
                         <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-4 text-slate-500 text-sm"></i>
                     </div>
 
-                    <div id="routeAutocompleteDropdown" class="mt-2 bg-slate-950 border border-slate-800 rounded-xl max-h-60 overflow-y-auto shadow-2xl space-y-1 p-1"></div>
+                    <div id="routeAutocompleteDropdown" class="mt-2 bg-slate-950 border border-slate-800 rounded-xl max-h-52 overflow-y-auto shadow-2xl space-y-1 p-1"></div>
                 </div>
 
+                <!-- Route Direction Selector -->
                 <div id="routeDirectionSection" class="hidden space-y-2 border-t border-slate-800 pt-3">
-                    <label class="block text-xs font-semibold text-slate-300">選擇行車方向 (方向 / 終點站)：</label>
+                    <label class="block text-xs font-semibold text-slate-300">選擇行車方向：</label>
                     <div id="routeDirectionList" class="grid grid-cols-1 gap-2"></div>
                 </div>
 
+                <!-- Route Stops Selector (Issue 4 Fixed) -->
                 <div id="routeStopsSection" class="hidden border-t border-slate-800 pt-3">
-                    <label id="modalStopHeaderCount" class="block text-xs font-semibold text-slate-300 mb-1.5">
-                        全線車站列表：
+                    <label id="modalStopHeaderCount" class="block text-xs font-semibold text-indigo-400 mb-1.5 flex items-center gap-1">
+                        <i class="fa-solid fa-location-dot"></i>
+                        <span>請選擇欲查詢之車站：</span>
                     </label>
 
                     <div id="modalStopList" class="bg-slate-950 border border-slate-800 rounded-xl p-2 max-h-52 overflow-y-auto space-y-1">
@@ -427,9 +430,9 @@
         let favorites = JSON.parse(localStorage.getItem('hk_bus_favs') || '[]');
         let userApiKey = localStorage.getItem('gemini_custom_apikey') || '';
 
-        // GPS Nearby Search State
-        let allKmbStopsCache = []; 
-        let isKmbStopsLoaded = false;
+        // Unified GPS Nearby Search State (KMB + CTB)
+        let allStopsCache = []; // Stores combined KMB & CTB stops
+        let isStopsLoaded = false;
         let currentGpsCoords = null; 
         let selectedGpsRadius = 300; 
 
@@ -453,34 +456,74 @@
             fetchWeatherAndLocation();
             renderFavorites();
             await loadInitialBusData();
-            loadAllKmbStopsDatabase(); 
+            loadAllStopsDatabase(); 
 
             if (userApiKey) {
                 document.getElementById('geminiApiKeyInput').value = userApiKey;
             }
 
-            // Default demo data if favorites exist
             if (favorites.length > 0) {
                 loadFavoriteItem(favorites[0]);
             } else {
-                // Preload Route 3D as default view
                 selectDirectRoute('kmb', '3D', 'outbound', '1', '慈雲山(中)');
             }
         };
 
-        async function loadAllKmbStopsDatabase() {
-            if (isKmbStopsLoaded && allKmbStopsCache.length > 0) return;
+        async function loadAllStopsDatabase() {
+            if (isStopsLoaded && allStopsCache.length > 0) return;
+            const dbStatus = document.getElementById('gpsDatabaseStatus');
+            if (dbStatus) dbStatus.textContent = '正在下載全港巴士站點數據...';
+
             try {
-                const res = await fetch('https://data.etabus.gov.hk/v1/transport/kmb/stop');
-                if (res.ok) {
-                    const data = await res.json();
-                    allKmbStopsCache = data.data || [];
-                    isKmbStopsLoaded = true;
-                    const dbStatus = document.getElementById('gpsDatabaseStatus');
-                    if (dbStatus) dbStatus.textContent = `已對齊 ${allKmbStopsCache.length} 個站點`;
+                // Parallel fetch KMB & CTB stop databases
+                const [kmbRes, ctbRes] = await Promise.all([
+                    fetch('https://data.etabus.gov.hk/v1/transport/kmb/stop').catch(() => null),
+                    fetch('https://rt.data.gov.hk/v2/transport/citybus/stop/CTB').catch(() => null)
+                ]);
+
+                let combined = [];
+
+                if (kmbRes && kmbRes.ok) {
+                    const kmbData = await kmbRes.json();
+                    (kmbData.data || []).forEach(s => {
+                        const lat = parseFloat(s.lat);
+                        const lng = parseFloat(s.long);
+                        if (!isNaN(lat) && !isNaN(lng)) {
+                            combined.push({
+                                company: 'kmb',
+                                stopId: s.stop,
+                                name: s.name_tc || s.name_en || '九巴站',
+                                lat: lat,
+                                lng: lng
+                            });
+                        }
+                    });
                 }
+
+                if (ctbRes && ctbRes.ok) {
+                    const ctbData = await ctbRes.json();
+                    (ctbData.data || []).forEach(s => {
+                        const lat = parseFloat(s.lat);
+                        const lng = parseFloat(s.long);
+                        if (!isNaN(lat) && !isNaN(lng)) {
+                            combined.push({
+                                company: 'ctb',
+                                stopId: s.stop,
+                                name: s.name_tc || s.name_en || '城巴站',
+                                lat: lat,
+                                lng: lng
+                            });
+                        }
+                    });
+                }
+
+                allStopsCache = combined;
+                isStopsLoaded = true;
+
+                if (dbStatus) dbStatus.textContent = `已載入 ${allStopsCache.length} 個站點 (九巴+城巴)`;
             } catch (e) {
-                console.error("Failed loading KMB stop database:", e);
+                console.error("Failed loading stop databases:", e);
+                if (dbStatus) dbStatus.textContent = '站點資料庫部分載入失敗';
             }
         }
 
@@ -498,7 +541,7 @@
 
         function openGpsModal() {
             document.getElementById('gpsSearchModal').classList.remove('hidden');
-            loadAllKmbStopsDatabase();
+            loadAllStopsDatabase();
             if (!currentGpsCoords) {
                 startGpsSearch();
             } else {
@@ -552,8 +595,8 @@
                 return;
             }
 
-            if (!isKmbStopsLoaded) {
-                await loadAllKmbStopsDatabase();
+            if (!isStopsLoaded) {
+                await loadAllStopsDatabase();
             }
 
             navigator.geolocation.getCurrentPosition(
@@ -596,7 +639,7 @@
             const listContainer = document.getElementById('gpsStopsList');
             const resultCount = document.getElementById('gpsResultCount');
 
-            if (!currentGpsCoords || !isKmbStopsLoaded || allKmbStopsCache.length === 0) {
+            if (!currentGpsCoords || !isStopsLoaded || allStopsCache.length === 0) {
                 listContainer.innerHTML = `<p class="text-center text-xs text-slate-400 py-4">無站點數據或未完成定位</p>`;
                 return;
             }
@@ -604,20 +647,17 @@
             const userLat = currentGpsCoords.lat;
             const userLng = currentGpsCoords.lng;
 
-            // Find stops within selected radius
+            // Find all stops within selected radius
             const nearbyStops = [];
-            allKmbStopsCache.forEach(stop => {
-                const sLat = parseFloat(stop.lat);
-                const sLng = parseFloat(stop.long);
-                if (!isNaN(sLat) && !isNaN(sLng)) {
-                    const dist = calculateHaversineDistance(userLat, userLng, sLat, sLng);
-                    if (dist <= selectedGpsRadius) {
-                        nearbyStops.push({
-                            stopId: stop.stop,
-                            name: stop.name_tc || stop.name_en || '巴士站',
-                            distance: dist
-                        });
-                    }
+            allStopsCache.forEach(stop => {
+                const dist = calculateHaversineDistance(userLat, userLng, stop.lat, stop.lng);
+                if (dist <= selectedGpsRadius) {
+                    nearbyStops.push({
+                        company: stop.company,
+                        stopId: stop.stopId,
+                        name: stop.name,
+                        distance: dist
+                    });
                 }
             });
 
@@ -641,100 +681,130 @@
             // Sort nearest stops
             nearbyStops.sort((a, b) => a.distance - b.distance);
 
+            // Dynamic stop query limit based on radius (Fix Issue 2: Larger radius checks more stops)
+            let maxStopsToQuery = 12;
+            if (selectedGpsRadius >= 300) maxStopsToQuery = 24;
+            if (selectedGpsRadius >= 500) maxStopsToQuery = 36;
+            if (selectedGpsRadius >= 1000) maxStopsToQuery = 50;
+
+            const topStops = nearbyStops.slice(0, maxStopsToQuery);
+
             listContainer.innerHTML = `
                 <div class="text-center py-4 text-indigo-400 text-xs">
-                    <i class="fa-solid fa-spinner fa-spin mr-1"></i>正在分析附近 ${nearbyStops.length} 個巴士站之行經路線...
+                    <i class="fa-solid fa-spinner fa-spin mr-1"></i>正在分析附近 ${topStops.length} 個巴士站之班次...
                 </div>
             `;
 
-            // Query route ETAs for top 6 nearest stops to aggregate unique routes
-            const topStops = nearbyStops.slice(0, 6);
-            const routeMapAgg = new Map(); // key: "ROUTE_DIR_SERVICE", value: { route, dir, serviceType, dest, nearestStopName, distance, stopId }
+            // Deduplication map: Key = COMPANY_ROUTE_DESTINATION
+            const routeMapAgg = new Map();
 
             await Promise.all(topStops.map(async (st) => {
                 try {
-                    const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${st.stopId}`);
-                    if (res.ok) {
-                        const data = await res.json();
-                        const etas = data.data || [];
-                        etas.forEach(e => {
-                            if (!e.route) return;
-                            const dirKey = e.dir || 'O';
-                            const serviceType = e.service_type || 1;
-                            const key = `${e.route}_${dirKey}_${serviceType}`;
-
-                            if (!routeMapAgg.has(key)) {
-                                routeMapAgg.set(key, {
-                                    route: e.route,
-                                    dir: dirKey,
-                                    serviceType: serviceType,
-                                    dest: e.dest_tc || e.dest_en || '目的地',
-                                    stopName: st.name,
-                                    distance: st.distance,
-                                    stopId: st.stopId
-                                });
-                            } else {
-                                // Keep the closer stop
-                                const existing = routeMapAgg.get(key);
-                                if (st.distance < existing.distance) {
-                                    existing.distance = st.distance;
-                                    existing.stopName = st.name;
-                                    existing.stopId = st.stopId;
-                                }
-                            }
-                        });
+                    let etas = [];
+                    if (st.company === 'kmb') {
+                        const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${st.stopId}`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            etas = data.data || [];
+                        }
+                    } else { // CTB
+                        const res = await fetch(`https://rt.data.gov.hk/v2/transport/citybus/stop-eta/CTB/${st.stopId}`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            etas = data.data || [];
+                        }
                     }
+
+                    etas.forEach(e => {
+                        if (!e.route) return;
+                        const dirKey = e.dir || 'O';
+                        const serviceType = e.service_type || 1;
+                        const destName = e.dest_tc || e.dest_en || '目的地';
+
+                        // Unique Key by Company + Route + Dest (Fix Issue 1: Eliminates duplicate routes)
+                        const key = `${st.company}_${e.route}_${destName}`.toUpperCase();
+
+                        if (!routeMapAgg.has(key)) {
+                            routeMapAgg.set(key, {
+                                company: st.company,
+                                route: e.route,
+                                dir: dirKey,
+                                serviceType: serviceType,
+                                dest: destName,
+                                stopName: st.name,
+                                distance: st.distance,
+                                stopId: st.stopId
+                            });
+                        } else {
+                            // If route exists, keep the entry with closer stop distance
+                            const existing = routeMapAgg.get(key);
+                            if (st.distance < existing.distance) {
+                                existing.distance = st.distance;
+                                existing.stopName = st.name;
+                                existing.stopId = st.stopId;
+                            }
+                        }
+                    });
                 } catch (e) {}
             }));
 
             const aggregatedRoutes = Array.from(routeMapAgg.values());
 
-            // Sort routes numerically/alphabetically
+            // Sort routes numerically and alphabetically
             aggregatedRoutes.sort((a, b) => a.route.localeCompare(b.route, undefined, { numeric: true }));
 
-            resultCount.textContent = `共整合出 ${aggregatedRoutes.length} 條途經巴士路線`;
+            resultCount.textContent = `${selectedGpsRadius}米內共 ${aggregatedRoutes.length} 條途經路線`;
 
             if (aggregatedRoutes.length === 0) {
                 listContainer.innerHTML = `
                     <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 text-center text-slate-400">
-                        <p class="text-xs">附近車站暫無班次數據</p>
+                        <p class="text-xs">附近車站暫無即時班次數據</p>
                     </div>
                 `;
                 return;
             }
 
-            // Render Route Cards directly
-            listContainer.innerHTML = aggregatedRoutes.map(r => `
-                <div onclick="selectGpsRouteDirect('${r.route}', '${r.dir}', '${r.serviceType}', '${r.stopId}', '${r.stopName.replace(/'/g, "\\'")}', '${r.dest.replace(/'/g, "\\'")}', ${r.distance})" class="bg-slate-900 border border-slate-800 hover:border-emerald-500/60 p-3 rounded-xl cursor-pointer transition shadow active:scale-98 flex items-center justify-between gap-3">
-                    <div class="flex items-center gap-3 overflow-hidden">
-                        <div class="w-12 h-10 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-center font-black text-amber-400 text-lg font-mono shrink-0">
-                            ${r.route}
+            // Render Route Cards
+            listContainer.innerHTML = aggregatedRoutes.map(r => {
+                const companyBadge = r.company === 'kmb' 
+                    ? '<span class="bg-rose-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded shrink-0">九巴</span>'
+                    : '<span class="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.5 rounded shrink-0">城巴</span>';
+
+                return `
+                    <div onclick="selectGpsRouteDirect('${r.company}', '${r.route}', '${r.dir}', '${r.serviceType}', '${r.stopId}', '${r.stopName.replace(/'/g, "\\'")}', '${r.dest.replace(/'/g, "\\'")}', ${r.distance})" class="bg-slate-900 border border-slate-800 hover:border-emerald-500/60 p-3 rounded-xl cursor-pointer transition shadow active:scale-98 flex items-center justify-between gap-3">
+                        <div class="flex items-center gap-2.5 overflow-hidden">
+                            <div class="w-12 h-10 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-center font-black text-amber-400 text-lg font-mono shrink-0">
+                                ${r.route}
+                            </div>
+                            <div class="overflow-hidden">
+                                <div class="flex items-center gap-1.5">
+                                    ${companyBadge}
+                                    <h4 class="font-extrabold text-slate-100 text-sm truncate">往 ${r.dest}</h4>
+                                </div>
+                                <p class="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5 truncate">
+                                    <span>📍 ${r.stopName}</span>
+                                </p>
+                            </div>
                         </div>
-                        <div class="overflow-hidden">
-                            <h4 class="font-extrabold text-slate-100 text-sm truncate">往 ${r.dest}</h4>
-                            <p class="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5 truncate">
-                                <span>📍 ${r.stopName}</span>
-                            </p>
+                        
+                        <div class="flex flex-col items-end shrink-0 gap-1">
+                            <span class="bg-emerald-950 border border-emerald-800 text-emerald-400 font-bold text-[11px] px-2 py-0.5 rounded-full">
+                                ${r.distance}m
+                            </span>
+                            <span class="text-[10px] text-indigo-400 font-semibold flex items-center gap-0.5">
+                                到站時間 <i class="fa-solid fa-chevron-right text-[8px]"></i>
+                            </span>
                         </div>
                     </div>
-                    
-                    <div class="flex flex-col items-end shrink-0 gap-1">
-                        <span class="bg-emerald-950 border border-emerald-800 text-emerald-400 font-bold text-[11px] px-2 py-0.5 rounded-full">
-                            ${r.distance}m
-                        </span>
-                        <span class="text-[10px] text-indigo-400 font-semibold flex items-center gap-0.5">
-                            即時預報 <i class="fa-solid fa-chevron-right text-[8px]"></i>
-                        </span>
-                    </div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
 
-        async function selectGpsRouteDirect(route, dir, serviceType, stopId, stopName, destName, distance) {
+        async function selectGpsRouteDirect(company, route, dir, serviceType, stopId, stopName, destName, distance) {
             closeGpsModal();
 
             let boundVal = (dir === 'O' || dir === 'outbound') ? 'outbound' : 'inbound';
-            currentCompany = 'kmb';
+            currentCompany = company;
 
             currentActiveStop = {
                 stopId: stopId,
@@ -742,7 +812,7 @@
                 name: stopName,
                 route: route,
                 bound: boundVal,
-                company: 'kmb',
+                company: company,
                 serviceType: serviceType,
                 destName: destName,
                 distance: distance
@@ -753,7 +823,7 @@
             startAutoRefreshTimer(currentActiveStop);
             await fetchETA(currentActiveStop);
 
-            fetchRouteStops('kmb', route, boundVal, serviceType);
+            fetchRouteStops(company, route, boundVal, serviceType);
         }
 
         function updateActiveDisplayCard(stopObj) {
@@ -902,7 +972,6 @@
             document.getElementById('routeStopsSection').classList.add('hidden');
         }
 
-        // Direct Route Number Typing & Autocomplete
         function onRouteInput(e) {
             const query = e.target.value.trim().toUpperCase();
             const dropdown = document.getElementById('routeAutocompleteDropdown');
@@ -943,6 +1012,7 @@
             selectedRoute = routeNum;
             document.getElementById('routeSearchInput').value = routeNum;
             document.getElementById('routeAutocompleteDropdown').innerHTML = '';
+            document.getElementById('routeStopsSection').classList.add('hidden');
 
             const routeVariants = routeMap.get(routeNum) || [];
             const dirListContainer = document.getElementById('routeDirectionList');
@@ -956,25 +1026,25 @@
                     const dest = v.dest_tc || v.dest_en || '終點';
 
                     cardsHtml += `
-                        <div onclick="selectDirectRoute('ctb', '${routeNum}', 'outbound', '1', '${dest.replace(/'/g, "\\'")}')" class="bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-amber-500 p-3 rounded-xl cursor-pointer transition flex items-center justify-between">
+                        <div onclick="loadModalStops('ctb', '${routeNum}', 'outbound', '1', '${dest.replace(/'/g, "\\'")}')" class="bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-amber-500 p-3 rounded-xl cursor-pointer transition flex items-center justify-between">
                             <div>
                                 <span class="bg-amber-500 text-slate-950 font-black text-[10px] px-1.5 py-0.5 rounded mr-1.5">去程</span>
                                 <span class="font-bold text-slate-100 text-sm">往 ${dest}</span>
                                 <p class="text-[11px] text-slate-400 mt-0.5">開出地點：${orig}</p>
                             </div>
-                            <i class="fa-solid fa-angle-right text-indigo-400 text-sm"></i>
+                            <i class="fa-solid fa-chevron-down text-indigo-400 text-xs"></i>
                         </div>
                     `;
 
                     if (orig !== dest) {
                         cardsHtml += `
-                            <div onclick="selectDirectRoute('ctb', '${routeNum}', 'inbound', '1', '${orig.replace(/'/g, "\\'")}')" class="bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-amber-500 p-3 rounded-xl cursor-pointer transition flex items-center justify-between">
+                            <div onclick="loadModalStops('ctb', '${routeNum}', 'inbound', '1', '${orig.replace(/'/g, "\\'")}')" class="bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-amber-500 p-3 rounded-xl cursor-pointer transition flex items-center justify-between">
                                 <div>
                                     <span class="bg-amber-500 text-slate-950 font-black text-[10px] px-1.5 py-0.5 rounded mr-1.5">回程</span>
                                     <span class="font-bold text-slate-100 text-sm">往 ${orig}</span>
                                     <p class="text-[11px] text-slate-400 mt-0.5">開出地點：${dest}</p>
                                 </div>
-                                <i class="fa-solid fa-angle-right text-indigo-400 text-sm"></i>
+                                <i class="fa-solid fa-chevron-down text-indigo-400 text-xs"></i>
                             </div>
                         `;
                     }
@@ -992,13 +1062,13 @@
                     const serviceNote = (serviceType !== '1') ? ` (特別班次 ${serviceType})` : '';
 
                     cardsHtml += `
-                        <div onclick="selectDirectRoute('kmb', '${routeNum}', '${boundVal}', '${serviceType}', '${dest.replace(/'/g, "\\'")}')" class="bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-rose-500 p-3 rounded-xl cursor-pointer transition flex items-center justify-between">
+                        <div onclick="loadModalStops('kmb', '${routeNum}', '${boundVal}', '${serviceType}', '${dest.replace(/'/g, "\\'")}')" class="bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-rose-500 p-3 rounded-xl cursor-pointer transition flex items-center justify-between">
                             <div>
                                 <span class="bg-rose-600 text-white font-black text-[10px] px-1.5 py-0.5 rounded mr-1.5">九巴</span>
                                 <span class="font-bold text-slate-100 text-sm">往 ${dest}${serviceNote}</span>
                                 <p class="text-[11px] text-slate-400 mt-0.5">開出地點：${orig}</p>
                             </div>
-                            <i class="fa-solid fa-angle-right text-indigo-400 text-sm"></i>
+                            <i class="fa-solid fa-chevron-down text-indigo-400 text-xs"></i>
                         </div>
                     `;
                 });
@@ -1006,6 +1076,57 @@
 
             dirListContainer.innerHTML = cardsHtml;
             dirSection.classList.remove('hidden');
+        }
+
+        // Fetch and display stop list in search modal (Fix Issue 4)
+        async function loadModalStops(company, routeNum, bound, serviceType, destName) {
+            const stopsSection = document.getElementById('routeStopsSection');
+            const stopsList = document.getElementById('modalStopList');
+
+            stopsSection.classList.remove('hidden');
+            stopsList.innerHTML = `
+                <div class="text-center py-4 text-indigo-400 text-xs">
+                    <i class="fa-solid fa-spinner fa-spin mr-1"></i>正在讀取 ${routeNum} 號線全線車站...
+                </div>
+            `;
+
+            await fetchRouteStops(company, routeNum, bound, serviceType);
+
+            if (currentRouteStops.length === 0) {
+                stopsList.innerHTML = `<p class="text-xs text-rose-400 text-center py-3">未能讀取該路線車站數據</p>`;
+                return;
+            }
+
+            stopsList.innerHTML = currentRouteStops.map(s => `
+                <div onclick="selectStopFromModal('${company}', '${routeNum}', '${bound}', '${serviceType}', '${s.stopId}', ${s.seq}, '${s.name.replace(/'/g, "\\'")}', '${destName.replace(/'/g, "\\'")}')" class="p-2.5 bg-slate-900 hover:bg-indigo-950/60 border border-slate-800 hover:border-indigo-500/50 rounded-xl cursor-pointer flex items-center justify-between text-xs transition">
+                    <div class="flex items-center gap-2 overflow-hidden">
+                        <span class="w-6 h-6 rounded-lg bg-slate-800 text-amber-400 font-mono font-bold flex items-center justify-center text-[11px] shrink-0">${s.seq}</span>
+                        <span class="font-bold text-slate-100 truncate">${s.name}</span>
+                    </div>
+                    <span class="text-[10px] text-emerald-400 font-semibold shrink-0">選擇站點 <i class="fa-solid fa-angle-right"></i></span>
+                </div>
+            `).join('');
+        }
+
+        async function selectStopFromModal(company, routeNum, bound, serviceType, stopId, seq, stopName, destName) {
+            closeSearchModal();
+
+            currentCompany = company;
+            currentActiveStop = {
+                stopId: stopId,
+                seq: seq,
+                name: stopName,
+                route: routeNum,
+                bound: bound,
+                company: company,
+                serviceType: serviceType,
+                destName: destName
+            };
+
+            updateActiveDisplayCard(currentActiveStop);
+            updateFavoriteBtnState();
+            startAutoRefreshTimer(currentActiveStop);
+            await fetchETA(currentActiveStop);
         }
 
         async function selectDirectRoute(company, routeNum, bound, serviceType, destName) {
