@@ -337,19 +337,28 @@
     <div id="gpsSearchModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 hidden">
         <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col h-[85vh]">
             
-            <div class="p-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-950 shrink-0">
-                <div class="flex items-center gap-2">
+            <div class="p-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-950 shrink-0 gap-2">
+                <div class="flex items-center gap-2 overflow-hidden shrink-0">
                     <div class="w-8 h-8 rounded-xl bg-emerald-600/30 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
                         <i class="fa-solid fa-location-dot text-sm"></i>
                     </div>
                     <div>
-                        <h3 class="text-base font-bold text-slate-100">GPS 附近巴士路線</h3>
-                        <p id="gpsModalStatus" class="text-xs text-slate-400">搜尋附近 500 米內的巴士路線</p>
+                        <h3 class="text-sm sm:text-base font-bold text-slate-100">GPS 附近巴士路線</h3>
+                        <p id="gpsModalStatus" class="text-[10px] sm:text-xs text-slate-400">搜尋附近 500 米內的巴士路線</p>
                     </div>
                 </div>
-                <button onclick="closeGpsSearchModal()" class="text-slate-400 hover:text-white p-1 text-lg">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
+
+                <!-- Company Filter Buttons (九巴 / 城巴 / 全部) -->
+                <div class="flex items-center gap-1.5 shrink-0">
+                    <div class="flex items-center bg-slate-900 border border-slate-800 p-0.5 rounded-xl">
+                        <button onclick="setGpsCompanyFilter('all')" id="gpsCompFilterAll" class="gps-comp-btn bg-emerald-600 text-white text-[11px] font-extrabold px-2 py-1 rounded-lg transition">全部</button>
+                        <button onclick="setGpsCompanyFilter('kmb')" id="gpsCompFilterKmb" class="gps-comp-btn text-slate-400 hover:text-white text-[11px] font-extrabold px-2 py-1 rounded-lg transition">九巴</button>
+                        <button onclick="setGpsCompanyFilter('ctb')" id="gpsCompFilterCtb" class="gps-comp-btn text-slate-400 hover:text-white text-[11px] font-extrabold px-2 py-1 rounded-lg transition">城巴</button>
+                    </div>
+                    <button onclick="closeGpsSearchModal()" class="text-slate-400 hover:text-white p-1 text-lg ml-0.5">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
             </div>
 
             <div class="p-3 border-b border-slate-800 bg-slate-950/60 flex items-center justify-between gap-2 shrink-0">
@@ -401,7 +410,12 @@
         let currentGpsRadius = 500;
         let kmbAllStopsCache = null;
         let kmbAllRouteStopsCache = null;
+        let ctbAllStopsCache = null;
+        let ctbAllRouteStopsCache = null;
         let isGpsSearching = false;
+
+        let currentGpsCompanyFilter = 'all'; // 'all', 'kmb', 'ctb'
+        let latestGpsResults = []; // Stores all nearby results
 
         // Auto Refresh Timer Variables (30 seconds interval)
         let autoRefreshTimer = null;
@@ -1149,6 +1163,24 @@
             executeGpsSearch();
         }
 
+        function setGpsCompanyFilter(company) {
+            currentGpsCompanyFilter = company;
+            
+            document.querySelectorAll('.gps-comp-btn').forEach(btn => {
+                btn.className = "gps-comp-btn text-slate-400 hover:text-white text-[11px] font-extrabold px-2 py-1 rounded-lg transition";
+            });
+
+            if (company === 'all') {
+                document.getElementById('gpsCompFilterAll').className = "gps-comp-btn bg-emerald-600 text-white text-[11px] font-extrabold px-2 py-1 rounded-lg transition";
+            } else if (company === 'kmb') {
+                document.getElementById('gpsCompFilterKmb').className = "gps-comp-btn bg-rose-600 text-white text-[11px] font-extrabold px-2 py-1 rounded-lg transition";
+            } else if (company === 'ctb') {
+                document.getElementById('gpsCompFilterCtb').className = "gps-comp-btn bg-amber-500 text-slate-950 text-[11px] font-extrabold px-2 py-1 rounded-lg transition";
+            }
+
+            renderGpsResults();
+        }
+
         function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
             const R = 6371000;
             const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -1159,6 +1191,278 @@
                 Math.sin(dLon/2) * Math.sin(dLon/2);
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
             return Math.round(R * c);
+        }
+
+        async function executeGpsSearch() {
+            if (isGpsSearching) return;
+            isGpsSearching = true;
+
+            const container = document.getElementById('gpsResultsContainer');
+            container.innerHTML = `
+                <div class="text-center py-10 text-slate-500">
+                    <i class="fa-solid fa-spinner fa-spin text-2xl mb-2 text-emerald-400 block"></i>
+                    <p class="text-sm font-bold text-slate-300">正在擷取 GPS 定位與搜尋九巴/城巴車站...</p>
+                    <p class="text-xs text-slate-500 mt-1">請確保已允許瀏覽器存取位置權限</p>
+                </div>
+            `;
+
+            if (!("geolocation" in navigator)) {
+                container.innerHTML = `
+                    <div class="text-center py-10 text-rose-400 text-xs">
+                        <i class="fa-solid fa-triangle-exclamation text-2xl mb-2 block"></i>
+                        <p>您的裝置不支援 GPS 定位服務</p>
+                    </div>
+                `;
+                isGpsSearching = false;
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    const userLat = position.coords.latitude;
+                    const userLng = position.coords.longitude;
+
+                    try {
+                        // 1. Fetch KMB stops & route-stops
+                        if (!kmbAllStopsCache) {
+                            const res = await fetch('https://data.etabus.gov.hk/v1/transport/kmb/stop');
+                            if (res.ok) {
+                                const data = await res.json();
+                                kmbAllStopsCache = data.data || [];
+                            }
+                        }
+
+                        if (!kmbAllRouteStopsCache) {
+                            const res = await fetch('https://data.etabus.gov.hk/v1/transport/kmb/route-stop');
+                            if (res.ok) {
+                                const data = await res.json();
+                                kmbAllRouteStopsCache = data.data || [];
+                            }
+                        }
+
+                        // 2. Fetch CTB stops
+                        if (!ctbAllStopsCache) {
+                            try {
+                                const ctbRes = await fetch('https://rt.data.gov.hk/v2/transport/citybus/stop/ctb');
+                                if (ctbRes.ok) {
+                                    const ctbData = await ctbRes.json();
+                                    ctbAllStopsCache = ctbData.data || [];
+                                }
+                            } catch(e){}
+                        }
+
+                        // Map nearby KMB stops
+                        const nearbyKmbStopsMap = new Map();
+                        if (kmbAllStopsCache) {
+                            kmbAllStopsCache.forEach(s => {
+                                const lat = parseFloat(s.lat);
+                                const lng = parseFloat(s.long);
+                                if (!isNaN(lat) && !isNaN(lng)) {
+                                    const dist = calculateDistanceMeters(userLat, userLng, lat, lng);
+                                    if (dist <= currentGpsRadius) {
+                                        nearbyKmbStopsMap.set(s.stop, {
+                                            stopId: s.stop,
+                                            name: s.name_tc || s.name_en,
+                                            distance: dist
+                                        });
+                                    }
+                                }
+                            });
+                        }
+
+                        // Map nearby CTB stops
+                        const nearbyCtbStopsMap = new Map();
+                        if (ctbAllStopsCache) {
+                            ctbAllStopsCache.forEach(s => {
+                                const lat = parseFloat(s.lat);
+                                const lng = parseFloat(s.long);
+                                if (!isNaN(lat) && !isNaN(lng)) {
+                                    const dist = calculateDistanceMeters(userLat, userLng, lat, lng);
+                                    if (dist <= currentGpsRadius) {
+                                        nearbyCtbStopsMap.set(s.stop, {
+                                            stopId: s.stop,
+                                            name: s.name_tc || s.name_en,
+                                            distance: dist
+                                        });
+                                    }
+                                }
+                            });
+                        }
+
+                        const matchedRouteCandidates = [];
+
+                        // KMB Matches
+                        if (kmbAllRouteStopsCache) {
+                            kmbAllRouteStopsCache.forEach(rs => {
+                                if (nearbyKmbStopsMap.has(rs.stop)) {
+                                    const stopInfo = nearbyKmbStopsMap.get(rs.stop);
+                                    let boundVal = rs.bound;
+                                    if (boundVal === 'O') boundVal = 'outbound';
+                                    if (boundVal === 'I') boundVal = 'inbound';
+
+                                    const routeVariants = kmbRoutes.filter(r => String(r.route) === String(rs.route));
+                                    let destName = '目的車站';
+                                    let origName = '';
+                                    if (routeVariants.length > 0) {
+                                        const matchedVariant = routeVariants.find(v => {
+                                            let vBound = v.bound;
+                                            if (vBound === 'O') vBound = 'outbound';
+                                            if (vBound === 'I') vBound = 'inbound';
+                                            return (vBound === boundVal || !v.bound) && String(v.service_type || '1') === String(rs.service_type || '1');
+                                        }) || routeVariants[0];
+
+                                        destName = matchedVariant.dest_tc || matchedVariant.dest_en || '目的車站';
+                                        origName = matchedVariant.orig_tc || matchedVariant.orig_en || '';
+                                    }
+
+                                    matchedRouteCandidates.push({
+                                        company: 'kmb',
+                                        route: rs.route,
+                                        bound: boundVal,
+                                        serviceType: rs.service_type || '1',
+                                        stopId: rs.stop,
+                                        stopName: stopInfo.name,
+                                        seq: rs.seq,
+                                        dest: destName,
+                                        orig: origName,
+                                        distance: stopInfo.distance
+                                    });
+                                }
+                            });
+                        }
+
+                        // CTB Matches (Fetch route-stop dynamically for nearby CTB stops)
+                        if (nearbyCtbStopsMap.size > 0 && ctbRoutes.length > 0) {
+                            const nearbyCtbStopIds = Array.from(nearbyCtbStopsMap.keys());
+                            // Limit CTB lookup for nearby stops
+                            await Promise.all(ctbRoutes.slice(0, 120).map(async (r) => {
+                                try {
+                                    const rRes = await fetch(`https://rt.data.gov.hk/v2/transport/citybus/route-stop/ctb/${r.route}`);
+                                    if (rRes.ok) {
+                                        const rData = await rRes.json();
+                                        const list = rData.data || [];
+                                        list.forEach(st => {
+                                            if (nearbyCtbStopsMap.has(st.stop)) {
+                                                const stopInfo = nearbyCtbStopsMap.get(st.stop);
+                                                let boundVal = st.dir === 'I' ? 'inbound' : 'outbound';
+                                                matchedRouteCandidates.push({
+                                                    company: 'ctb',
+                                                    route: r.route,
+                                                    bound: boundVal,
+                                                    serviceType: '1',
+                                                    stopId: st.stop,
+                                                    stopName: stopInfo.name,
+                                                    seq: st.seq,
+                                                    dest: r.dest_tc || r.dest_en || '目的車站',
+                                                    orig: r.orig_tc || r.orig_en || '',
+                                                    distance: stopInfo.distance
+                                                });
+                                            }
+                                        });
+                                    }
+                                } catch(e){}
+                            }));
+                        }
+
+                        // Deduplicate candidates
+                        const deduplicatedMap = new Map();
+                        matchedRouteCandidates.forEach(item => {
+                            const key = `${item.company}_${item.route}_${item.bound}_${item.dest}`;
+                            if (!deduplicatedMap.has(key)) {
+                                deduplicatedMap.set(key, item);
+                            } else {
+                                const existing = deduplicatedMap.get(key);
+                                if (item.distance < existing.distance) {
+                                    deduplicatedMap.set(key, item);
+                                }
+                            }
+                        });
+
+                        latestGpsResults = Array.from(deduplicatedMap.values())
+                            .sort((a, b) => a.distance - b.distance);
+
+                        renderGpsResults();
+
+                    } catch (err) {
+                        console.error("GPS search error:", err);
+                        container.innerHTML = `
+                            <div class="text-center py-10 text-rose-400 text-xs">
+                                <i class="fa-solid fa-triangle-exclamation text-2xl mb-2 block"></i>
+                                <p>搜尋附近車站時發生錯誤，請重試</p>
+                            </div>
+                        `;
+                    } finally {
+                        isGpsSearching = false;
+                    }
+                },
+                (error) => {
+                    isGpsSearching = false;
+                    container.innerHTML = `
+                        <div class="text-center py-10 text-rose-400 text-xs">
+                            <i class="fa-solid fa-location-slash text-2xl mb-2 block text-slate-500"></i>
+                            <p class="font-bold">無法存取您的 GPS 位置</p>
+                            <p class="slate-400 mt-1">請在瀏覽器設定中開啟位置權限後重試</p>
+                        </div>
+                    `;
+                },
+                { timeout: 10000, enableHighAccuracy: true, maximumAge: 10000 }
+            );
+        }
+
+        function renderGpsResults() {
+            const container = document.getElementById('gpsResultsContainer');
+            
+            let filteredResults = latestGpsResults;
+            if (currentGpsCompanyFilter === 'kmb') {
+                filteredResults = latestGpsResults.filter(item => item.company === 'kmb');
+            } else if (currentGpsCompanyFilter === 'ctb') {
+                filteredResults = latestGpsResults.filter(item => item.company === 'ctb');
+            }
+
+            if (filteredResults.length === 0) {
+                const compName = currentGpsCompanyFilter === 'kmb' ? '九巴' : (currentGpsCompanyFilter === 'ctb' ? '城巴' : '');
+                container.innerHTML = `
+                    <div class="text-center py-10 text-slate-500">
+                        <i class="fa-solid fa-bus-slash text-3xl mb-2 block text-slate-700"></i>
+                        <p class="text-sm font-bold text-slate-300">附近 ${currentGpsRadius < 1000 ? currentGpsRadius + ' 米' : '1 公里'}內未有找到${compName}路線</p>
+                        <p class="text-xs text-slate-500 mt-1">請嘗試切換「全部」或加大搜尋距離（例如 500m 或 1km）</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Increased results count by +50 (slice limit: 150)
+            const displayList = filteredResults.slice(0, 150);
+
+            container.innerHTML = displayList.map(item => {
+                const compBadge = item.company === 'kmb' 
+                    ? '<span class="bg-rose-600 text-white text-[10px] font-black px-2 py-0.5 rounded shrink-0">九巴</span>' 
+                    : '<span class="bg-amber-500 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded shrink-0">城巴</span>';
+
+                const distText = item.distance < 1000 ? `${item.distance} 米` : `${(item.distance / 1000).toFixed(1)} 公里`;
+
+                return `
+                    <div onclick="selectGpsRouteItem('${item.company}', '${item.route}', '${item.bound}', '${item.serviceType}', '${item.stopId}', '${item.stopName.replace(/'/g, "\\'")}', ${item.seq}, '${item.dest.replace(/'/g, "\\'")}', '${item.orig.replace(/'/g, "\\'")}')" class="bg-slate-900 border border-slate-800 hover:border-emerald-500/60 rounded-xl p-3 cursor-pointer transition flex items-center justify-between gap-3 shadow-sm active:scale-98">
+                        <div class="flex items-center gap-2.5 overflow-hidden flex-1">
+                            ${compBadge}
+                            <div class="overflow-hidden">
+                                <div class="flex items-center gap-2">
+                                    <span class="font-black text-emerald-400 text-base">${item.route}</span>
+                                    <span class="text-xs font-bold text-slate-200 truncate">往 ${item.dest}</span>
+                                </div>
+                                <div class="text-xs text-slate-400 truncate mt-0.5">
+                                    <i class="fa-solid fa-location-dot text-[10px] text-indigo-400 mr-1"></i>${item.stopName}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="text-right shrink-0">
+                            <span class="bg-emerald-950/80 text-emerald-300 border border-emerald-500/30 text-xs font-bold px-2 py-1 rounded-lg inline-block">
+                                ${distText}
+                            </span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
         }
 
         async function executeGpsSearch() {
