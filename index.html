@@ -2,7 +2,8 @@
 <html lang="zh-HK">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 加入 viewport-fit=cover 以完美適配 iPhone 瀏海屏與動態島 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>香港巴士路線地圖與實時預報</title>
     
     <!-- Leaflet 地圖樣式 (CSS) -->
@@ -14,25 +15,80 @@
             margin: 0;
             padding: 0;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent; /* 移除 iOS 點擊灰色陰影 */
         }
 
         body {
             display: flex;
             flex-direction: column;
             height: 100vh;
-            background-color: #f5f5f7;
+            background-color: #f2f2f7; /* iOS 標準背景灰 */
+            /* 支援 iPhone 安全區域 padding */
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
         }
 
         /* 頂部控制面板 */
         .control-panel {
             background: #ffffff;
-            padding: 14px 16px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            padding: 12px 16px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
             z-index: 1000;
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        /* 頂行：更新時間與手動重新整理按鈕 */
+        .status-header {
+            display: flex;
+            justify-content: space-between;
             align-items: center;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #e5e5ea;
+        }
+
+        .update-info {
+            font-size: 14px;
+            font-weight: 600;
+            color: #3a3a3c;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .update-time-text {
+            color: #007aff;
+            font-weight: 700;
+            font-mono: monospace;
+        }
+
+        .refresh-btn {
+            background-color: #007aff;
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            padding: 6px 14px;
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+            min-height: 36px;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+
+        .refresh-btn:active {
+            background-color: #0056b3;
+            transform: scale(0.96);
+        }
+
+        /* 表單區域網格佈局 */
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
         }
 
         .form-group {
@@ -42,49 +98,55 @@
         }
 
         .form-group label {
-            font-size: 12px;
+            font-size: 13px;
             font-weight: 600;
-            color: #555;
+            color: #6c6c70;
         }
 
+        /* iOS 專屬優化：字體必須 16px 以上才不會自動 Zoom-in */
         select, input {
-            padding: 9px 10px;
-            border: 1px solid #ccc;
-            border-radius: 6px;
-            font-size: 14px;
+            padding: 10px 12px;
+            border: 1px solid #c7c7cc;
+            border-radius: 10px;
+            font-size: 16px; 
             outline: none;
-            transition: border-color 0.2s;
+            background-color: #f9f9fb;
+            transition: border-color 0.2s, background-color 0.2s;
             width: 100%;
+            height: 44px; /* iOS 44px 標準點擊高度 */
         }
 
         select:focus, input:focus {
             border-color: #007aff;
+            background-color: #ffffff;
         }
 
-        /* ETA 顯示框樣式 */
+        /* ETA 顯示框樣式 (iPhone 大字體優化) */
         .eta-box {
-            background: #f0f4f8;
-            border: 1px solid #d0dbe5;
-            border-radius: 6px;
+            background: #eef5ff;
+            border: 1px solid #b8d7ff;
+            border-radius: 10px;
             padding: 6px 10px;
-            min-height: 40px;
+            min-height: 52px;
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 8px;
             overflow-x: auto;
         }
 
         .eta-badge {
             background: #007aff;
             color: #fff;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: 600;
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 700;
             white-space: nowrap;
             display: flex;
             flex-direction: column;
             align-items: center;
+            justify-content: center;
+            min-width: 85px;
             transition: background-color 0.3s;
         }
 
@@ -99,14 +161,16 @@
         }
 
         .eta-badge .eta-rmk {
-            font-size: 9px;
-            opacity: 0.85;
+            font-size: 10px;
+            opacity: 0.9;
             font-weight: normal;
+            margin-top: 2px;
         }
 
         .eta-placeholder {
-            font-size: 12px;
-            color: #888;
+            font-size: 14px;
+            color: #8e8e93;
+            font-weight: 500;
         }
 
         /* 地圖區域 */
@@ -120,12 +184,13 @@
         .loading-overlay {
             position: absolute;
             top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(255,255,255,0.7);
+            background: rgba(255,255,255,0.85);
             display: flex;
             justify-content: center;
             align-items: center;
+            font-size: 16px;
             font-weight: bold;
-            color: #333;
+            color: #1c1c1e;
             z-index: 2000;
             display: none;
         }
@@ -135,31 +200,44 @@
 
     <!-- 頂部選單面板 -->
     <div class="control-panel">
-        <div class="form-group">
-            <label for="route-input">1. 選擇或輸入路線</label>
-            <input type="text" id="route-input" list="route-list" placeholder="例如: 1A, 290X, 603">
-            <datalist id="route-list"></datalist>
+        
+        <!-- 頂行：更新時間與手動重新整理按鈕 -->
+        <div class="status-header">
+            <div class="update-info">
+                <span>更新時間:</span>
+                <span id="update-time-text" class="update-time-text">--:--:--</span>
+            </div>
+            <button id="manual-refresh-btn" class="refresh-btn" onclick="handleManualRefresh()">
+                <span>🔄 重新整理</span>
+            </button>
         </div>
 
-        <div class="form-group">
-            <label for="bound-select">2. 選擇方向</label>
-            <select id="bound-select" disabled>
-                <option value="">請先選擇路線</option>
-            </select>
-        </div>
+        <div class="form-grid">
+            <div class="form-group">
+                <label for="route-input">1. 選擇或輸入路線</label>
+                <input type="text" id="route-input" list="route-list" placeholder="例如: 1A, 290X, 6">
+                <datalist id="route-list"></datalist>
+            </div>
 
-        <div class="form-group">
-            <label for="stop-select">3. 選擇巴士站</label>
-            <select id="stop-select" disabled>
-                <option value="">請先選擇路線與方向</option>
-            </select>
-        </div>
+            <div class="form-group">
+                <label for="bound-select">2. 選擇方向</label>
+                <select id="bound-select" disabled>
+                    <option value="">請先選擇路線</option>
+                </select>
+            </div>
 
-        <!-- 4. 實時到站預報 -->
-        <div class="form-group">
-            <label>4. 預計到站時間</label>
-            <div id="eta-display" class="eta-box">
-                <span class="eta-placeholder">請先選擇車站</span>
+            <div class="form-group">
+                <label for="stop-select">3. 選擇巴士站</label>
+                <select id="stop-select" disabled>
+                    <option value="">請先選擇路線與方向</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>4. 預計到站時間</label>
+                <div id="eta-display" class="eta-box">
+                    <span class="eta-placeholder">請先選擇車站</span>
+                </div>
             </div>
         </div>
     </div>
@@ -185,6 +263,11 @@
         let sortedRouteNames = [];
         let allRoutesMap = {}; 
         let etaTimer = null; // 全域 ETA 自動更新計時器
+        
+        // 紀錄當前選取狀態，供手動刷新使用
+        let currentSelectedStopId = null;
+        let currentSelectedRoute = null;
+        let currentSelectedBound = null;
 
         window.onload = function() {
             initMap();
@@ -194,11 +277,16 @@
 
         // 1. 初始化 Leaflet 地圖
         function initMap() {
-            map = L.map('map').setView([22.3193, 114.1694], 12);
+            map = L.map('map', {
+                zoomControl: false // iPhone 畫面較小，預設關閉 Zoom 按鈕，以雙指縮放為主
+            }).setView([22.3193, 114.1694], 12);
             
+            // 重新將 Zoom 控制項目加在右下角，避免遮擋頂部選單
+            L.control.zoom({ position: 'bottomright' }).addTo(map);
+
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             }).addTo(map);
         }
 
@@ -222,7 +310,7 @@
                     }
                 });
 
-                // 使用自然排序 (numeric: true) 確保 6, 6C, 6D... 60 依從小到大精準排序
+                // 自然排序 (numeric: true) 確保 6, 6C, 6D... 60 依從小到大排序
                 sortedRouteNames = Object.keys(allRoutesMap).sort((a, b) => 
                     a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
                 );
@@ -239,12 +327,10 @@
             routeList.innerHTML = '';
             
             const query = prefix.trim().toUpperCase();
-            // 嚴格前綴比對
             const filtered = query 
                 ? sortedRouteNames.filter(r => r.startsWith(query)) 
                 : sortedRouteNames;
 
-            // 限制最多填入 80 項，保障前端 DOM 效能
             filtered.slice(0, 80).forEach(route => {
                 const opt = document.createElement('option');
                 opt.value = route;
@@ -258,12 +344,10 @@
             const boundSelect = document.getElementById('bound-select');
             const stopSelect = document.getElementById('stop-select');
 
-            // 輸入文字時，即時觸發「前綴篩選」
             routeInput.addEventListener('input', (e) => {
                 updateRouteDatalist(e.target.value);
             });
 
-            // 路線確認變更時
             routeInput.addEventListener('change', () => {
                 const route = routeInput.value.trim().toUpperCase();
                 if (!route || !allRoutesMap[route]) return;
@@ -282,10 +366,8 @@
                 loadRouteDetails();
             });
 
-            // 方向變更時
             boundSelect.addEventListener('change', loadRouteDetails);
 
-            // 車站變更時：移動地圖 + 讀取到站預報 (ETA)
             stopSelect.addEventListener('change', (e) => {
                 const stopId = e.target.value;
                 if (!stopId) return;
@@ -302,28 +384,46 @@
                 const marker = stopMarkers.find(m => m.stopId === stopId);
                 if (marker) marker.openPopup();
 
-                const route = document.getElementById('route-input').value.trim().toUpperCase();
-                const bound = document.getElementById('bound-select').value;
+                currentSelectedStopId = stopId;
+                currentSelectedRoute = document.getElementById('route-input').value.trim().toUpperCase();
+                currentSelectedBound = document.getElementById('bound-select').value;
                 
-                // 啟動 30 秒自動更新定時器
-                startAutoRefreshETA(stopId, route, bound);
+                startAutoRefreshETA(currentSelectedStopId, currentSelectedRoute, currentSelectedBound);
             }
         }
 
-        // 啟動與重設 ETA 自動更新計時器 (每30秒)
+        // 手動更新按鈕觸發事件
+        function handleManualRefresh() {
+            if (!currentSelectedStopId || !currentSelectedRoute || !currentSelectedBound) {
+                alert("請先選擇路線與車站");
+                return;
+            }
+            startAutoRefreshETA(currentSelectedStopId, currentSelectedRoute, currentSelectedBound);
+        }
+
+        // 啟動與重設 ETA 自動更新計時器 (每 30 秒)
         function startAutoRefreshETA(stopId, route, bound) {
-            if (etaTimer) clearInterval(etaTimer); // 清除舊的定時器
+            if (etaTimer) clearInterval(etaTimer); // 清除舊計時器
             
-            fetchETA(stopId, route, bound); // 立即執行第一次
+            fetchETA(stopId, route, bound); // 立即手動抓取一次
             
             etaTimer = setInterval(() => {
                 fetchETA(stopId, route, bound);
-            }, 30000); // 30,000 毫秒 = 30 秒
+            }, 30000); // 30 秒自動更新
         }
 
-        // 4. 取得車站數據並發起高精準繪製
+        // 格式化目前時間為 HH:MM:SS
+        function updateTimestampUI() {
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            document.getElementById('update-time-text').textContent = `${hours}:${minutes}:${seconds}`;
+        }
+
+        // 4. 取得車站數據並繪製路線
         async function loadRouteDetails() {
-            if (etaTimer) clearInterval(etaTimer); // 清除定時器
+            if (etaTimer) clearInterval(etaTimer);
 
             const route = document.getElementById('route-input').value.trim().toUpperCase();
             const bound = document.getElementById('bound-select').value;
@@ -348,14 +448,12 @@
                     return;
                 }
 
-                // 並行抓取各站數據
                 const stopPromises = stopList.map(s => 
                     fetch(`${API_BASE}/stop/${s.stop}`).then(res => res.json())
                 );
                 const stopResults = await Promise.all(stopPromises);
                 routeStopsData = stopResults.map(r => r.data);
 
-                // 更新車站選單
                 stopSelect.innerHTML = '<option value="">-- 請選擇車站 --</option>';
                 routeStopsData.forEach((stop, idx) => {
                     const opt = document.createElement('option');
@@ -365,10 +463,8 @@
                 });
                 stopSelect.disabled = false;
 
-                // 繪製標記與高精準行車軌跡
                 await renderMapElements(routeStopsData);
 
-                // 預設自動選擇第 1 站並載入 ETA
                 if (routeStopsData.length > 0) {
                     stopSelect.value = routeStopsData[0].stop;
                     onStopSelected(routeStopsData[0].stop);
@@ -407,7 +503,7 @@
                         }
                     }
                 } catch (e) {
-                    console.warn("分組 OSRM 請求失敗，該段備用直線擬合:", e);
+                    console.warn("分組 OSRM 請求失敗，備用直線擬合:", e);
                 }
 
                 const fallbackLine = chunkStops.map(s => [parseFloat(s.lat), parseFloat(s.long)]);
@@ -466,7 +562,7 @@
             map.fitBounds(polylineLayer.getBounds(), { padding: [30, 30] });
         }
 
-        // 7. 抓取九巴 API 實時到站預報 (ETA) 與時間狀態判斷
+        // 7. 抓取九巴 API 實時到站預報 (ETA)
         async function fetchETA(stopId, route, boundStr) {
             const etaDisplay = document.getElementById('eta-display');
             const dirCode = (boundStr === 'outbound') ? 'O' : 'I';
@@ -475,6 +571,9 @@
                 const res = await fetch(`${API_BASE}/eta/${stopId}/${route}/1`);
                 const json = await res.json();
 
+                // 數據更新成功，立刻刷新 UI 上顯示的更新時間
+                updateTimestampUI();
+
                 if (!json.data || json.data.length === 0) {
                     etaDisplay.innerHTML = '<span class="eta-placeholder">暫無到站資料</span>';
                     return;
@@ -482,17 +581,16 @@
 
                 const now = new Date();
 
-                // 數據處理與精準時間邏輯過濾
                 const processed = json.data
                     .filter(item => item.dir === dirCode && item.eta)
                     .map(item => {
                         const etaTime = new Date(item.eta);
-                        const diffSec = (etaTime - now) / 1000; // 相差秒數
+                        const diffSec = (etaTime - now) / 1000;
                         return { ...item, diffSec };
                     })
-                    .filter(item => item.diffSec >= -30) // 過濾：超過 30 秒前的歷史班次自動清除
+                    .filter(item => item.diffSec >= -30) // 過濾開走超過 30 秒的車次
                     .sort((a, b) => a.diffSec - b.diffSec)
-                    .slice(0, 3); // 顯示最近 3 班
+                    .slice(0, 3);
 
                 if (processed.length === 0) {
                     etaDisplay.innerHTML = '<span class="eta-placeholder">末班車已過 / 暫無預報</span>';
@@ -504,15 +602,12 @@
                     let badgeClass = "";
 
                     if (item.diffSec < 0 && item.diffSec >= -30) {
-                        // 1. 到站至 30 秒內 -> 正在離開
                         timeText = "正在離開";
                         badgeClass = "leaving";
                     } else if (item.diffSec >= 0 && item.diffSec <= 60) {
-                        // 2. 最後 1 分鐘內 (0~60秒) -> 即將到達
                         timeText = "即將到達";
                         badgeClass = "arriving";
                     } else {
-                        // 3. 超過 1 分鐘 -> 顯示剩餘分鐘數 (向上取整)
                         const mins = Math.ceil(item.diffSec / 60);
                         timeText = `${mins} 分鐘`;
                     }
