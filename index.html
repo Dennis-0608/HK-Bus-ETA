@@ -104,7 +104,7 @@
             border: 1px solid #b8d7ff;
             border-radius: 8px;
             padding: 4px;
-            height: 42px;
+            height: 48px;
             display: flex;
             align-items: center;
             gap: 4px;
@@ -116,7 +116,7 @@
             color: #fff;
             padding: 2px 4px;
             border-radius: 6px;
-            font-size: 12px;
+            font-size: 16px; /* 字體已增加 4px (由 12px -> 16px) */
             font-weight: 700;
             white-space: nowrap;
             display: flex;
@@ -291,6 +291,7 @@
         let currentSelectedStopId = null;
         let currentSelectedRoute = null;
         let currentSelectedBound = null;
+        let currentSelectedServiceType = null;
 
         window.onload = function() {
             initMap();
@@ -321,13 +322,13 @@
                     if (!allRoutesMap[rName]) {
                         allRoutesMap[rName] = [];
                     }
-                    if (item.service_type === "1") {
-                        allRoutesMap[rName].push({
-                            bound: item.bound === 'O' ? 'outbound' : 'inbound',
-                            dest: item.dest_tc,
-                            orig: item.orig_tc
-                        });
-                    }
+                    // 包含正班(service_type=1) 及 特別班次(service_type!=1)
+                    allRoutesMap[rName].push({
+                        bound: item.bound === 'O' ? 'outbound' : 'inbound',
+                        serviceType: item.service_type || "1",
+                        dest: item.dest_tc,
+                        orig: item.orig_tc
+                    });
                 });
 
                 sortedRouteNames = Object.keys(allRoutesMap).sort((a, b) => 
@@ -374,8 +375,10 @@
                 
                 bounds.forEach(b => {
                     const opt = document.createElement('option');
-                    opt.value = b.bound;
-                    opt.textContent = `往 ${b.dest}`;
+                    // 將方向與服務類型封裝進 value
+                    opt.value = JSON.stringify({ bound: b.bound, serviceType: b.serviceType });
+                    const isSpecial = b.serviceType !== "1";
+                    opt.textContent = `往 ${b.dest}${isSpecial ? ' (特別班次)' : ''}`;
                     boundSelect.appendChild(opt);
                 });
 
@@ -402,27 +405,33 @@
 
                 currentSelectedStopId = stopId;
                 currentSelectedRoute = document.getElementById('route-input').value.trim().toUpperCase();
-                currentSelectedBound = document.getElementById('bound-select').value;
                 
-                startAutoRefreshETA(currentSelectedStopId, currentSelectedRoute, currentSelectedBound);
+                const boundVal = document.getElementById('bound-select').value;
+                if (boundVal) {
+                    const parsed = JSON.parse(boundVal);
+                    currentSelectedBound = parsed.bound;
+                    currentSelectedServiceType = parsed.serviceType;
+                }
+                
+                startAutoRefreshETA(currentSelectedStopId, currentSelectedRoute, currentSelectedBound, currentSelectedServiceType);
             }
         }
 
         function handleManualRefresh() {
-            if (!currentSelectedStopId || !currentSelectedRoute || !currentSelectedBound) {
+            if (!currentSelectedStopId || !currentSelectedRoute || !currentSelectedBound || !currentSelectedServiceType) {
                 alert("請先選擇路線與車站");
                 return;
             }
-            startAutoRefreshETA(currentSelectedStopId, currentSelectedRoute, currentSelectedBound);
+            startAutoRefreshETA(currentSelectedStopId, currentSelectedRoute, currentSelectedBound, currentSelectedServiceType);
         }
 
-        function startAutoRefreshETA(stopId, route, bound) {
+        function startAutoRefreshETA(stopId, route, bound, serviceType) {
             if (etaTimer) clearInterval(etaTimer);
             
-            fetchETA(stopId, route, bound);
+            fetchETA(stopId, route, bound, serviceType);
             
             etaTimer = setInterval(() => {
-                fetchETA(stopId, route, bound);
+                fetchETA(stopId, route, bound, serviceType);
             }, 30000);
         }
 
@@ -438,19 +447,22 @@
             if (etaTimer) clearInterval(etaTimer);
 
             const route = document.getElementById('route-input').value.trim().toUpperCase();
-            const bound = document.getElementById('bound-select').value;
+            const boundSelectVal = document.getElementById('bound-select').value;
             const stopSelect = document.getElementById('stop-select');
             const etaDisplay = document.getElementById('eta-display');
             const loading = document.getElementById('loading');
 
-            if (!route || !bound) return;
+            if (!route || !boundSelectVal) return;
+
+            const { bound, serviceType } = JSON.parse(boundSelectVal);
 
             loading.style.display = 'flex';
             stopSelect.disabled = true;
             etaDisplay.innerHTML = '<span class="eta-placeholder">請先選擇車站</span>';
 
             try {
-                const rsRes = await fetch(`${API_BASE}/route-stop/${route}/${bound}/1`);
+                // 動態帶入 serviceType 抓取正確路線車站
+                const rsRes = await fetch(`${API_BASE}/route-stop/${route}/${bound}/${serviceType}`);
                 const rsData = await rsRes.json();
                 const stopList = rsData.data;
 
@@ -572,12 +584,13 @@
             map.fitBounds(polylineLayer.getBounds(), { padding: [30, 30] });
         }
 
-        async function fetchETA(stopId, route, boundStr) {
+        async function fetchETA(stopId, route, boundStr, serviceType) {
             const etaDisplay = document.getElementById('eta-display');
             const dirCode = (boundStr === 'outbound') ? 'O' : 'I';
 
             try {
-                const res = await fetch(`${API_BASE}/eta/${stopId}/${route}/1`);
+                // 動態帶入 serviceType 查詢實時到站時間
+                const res = await fetch(`${API_BASE}/eta/${stopId}/${route}/${serviceType}`);
                 const json = await res.json();
 
                 updateTimestampUI();
