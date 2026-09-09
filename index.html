@@ -225,6 +225,12 @@
             z-index: 2000;
             display: none;
         }
+
+        /* 自訂紅色地標樣式（消除 Leaflet預設白框） */
+        .custom-red-pin {
+            background: none !important;
+            border: none !important;
+        }
     </style>
 </head>
 <body>
@@ -304,6 +310,19 @@
         let currentSelectedStop = null;
         let currentSelectedRoute = null;
         let currentSelectedBound = null;
+        let lastValidRouteInput = ""; // 記錄上次成功的輸入值
+
+        // 自訂紅色向量 (SVG) 地標 Icon
+        const redIcon = L.divIcon({
+            className: 'custom-red-pin',
+            html: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 36" width="28" height="42">
+                    <path fill="#FF3B30" stroke="#FFFFFF" stroke-width="1.5" d="M12 0C5.373 0 0 5.373 0 12c0 9 12 24 12 24s12-15 12-24c0-6.627-5.373-12-12-12z"/>
+                    <circle cx="12" cy="12" r="4.5" fill="#FFFFFF"/>
+                   </svg>`,
+            iconSize: [28, 42],
+            iconAnchor: [14, 42],
+            popupAnchor: [0, -38]
+        });
 
         // 工具函式：防抖動 (Debounce)
         function debounce(func, delay = 150) {
@@ -429,10 +448,18 @@
                 debouncedInput(e.target.value);
             });
 
-            // 【重點優化】當點擊或獲取焦點時：全選文字並展示完整選單，方便再次挑選其他路線
+            // 【優化點 1】：點擊/聚焦時自動備份並清空，拉出全部路線下拉選單
             routeInput.addEventListener('focus', (e) => {
-                e.target.select();
+                lastValidRouteInput = e.target.value;
+                e.target.value = '';
                 updateRouteDatalist('');
+            });
+
+            // 若離開放棄選擇，恢復原先路線
+            routeInput.addEventListener('blur', (e) => {
+                if (!e.target.value.trim() && lastValidRouteInput) {
+                    e.target.value = lastValidRouteInput;
+                }
             });
 
             routeInput.addEventListener('change', onRouteInputChanged);
@@ -454,6 +481,9 @@
                 boundSelect.disabled = true;
                 return;
             }
+
+            // 成功配對路線，更新記憶的最新有效值
+            lastValidRouteInput = document.getElementById('route-input').value;
 
             boundSelect.innerHTML = '';
             const routeObj = allRoutesMap[rawRoute];
@@ -609,7 +639,7 @@
             document.getElementById('update-time-text').textContent = `${hours}:${minutes}:${seconds}`;
         }
 
-        // 渲染巴士站地標（已移除軌跡與劃線 logic）
+        // 渲染巴士站地標
         function renderMapElements(stops) {
             stopMarkers.forEach(m => map.removeLayer(m));
             stopMarkers = [];
@@ -622,7 +652,8 @@
                 const pos = [parseFloat(stop.lat), parseFloat(stop.long)];
                 boundsList.push(pos);
 
-                const marker = L.marker(pos)
+                // 【優化點 2】：套用自訂的紅色圖示 { icon: redIcon }
+                const marker = L.marker(pos, { icon: redIcon })
                     .addTo(map)
                     .bindPopup(`<div style="font-size: 16px; font-weight: bold; padding: 2px 0; color: #1c1c1e;">${idx + 1}. ${stop.name_tc}</div>`);
 
@@ -634,7 +665,7 @@
                 stopMarkers.push(marker);
             });
 
-            // 自動將地圖視角調整至顯示所有車站
+            // 自動調整地圖視角涵蓋所有車站
             if (boundsList.length > 0) {
                 map.fitBounds(L.latLngBounds(boundsList), { padding: [30, 30] });
             }
