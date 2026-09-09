@@ -236,7 +236,7 @@
         <div class="row-top">
             <div class="form-group route-group">
                 <label for="route-input">1. 輸入城巴路線</label>
-                <input type="text" id="route-input" list="route-list" placeholder="如: 70, A21, 10">
+                <input type="text" id="route-input" list="route-list" placeholder="如: 70, A21, 10" autocomplete="off">
                 <datalist id="route-list"></datalist>
             </div>
 
@@ -281,22 +281,19 @@
 
     <!-- 地圖呈現區域 -->
     <div style="position: relative; flex: 1;">
-        <div id="loading" class="loading-overlay">數據與路線繪製中...</div>
+        <div id="loading" class="loading-overlay">車站數據繪製中...</div>
         <div id="map"></div>
     </div>
 
-    <!-- Leaflet 地圖 JavaScript 庫與箭咀外掛 -->
+    <!-- Leaflet 地圖 JavaScript 庫 -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet-polylinedecorator@1.6.0/dist/leaflet.polylineDecorator.js"></script>
 
     <script>
-        // 正確的政府 Data.gov.hk 城巴 API 域名
+        // Data.gov.hk 城巴 API 官方域名
         const API_CTB = "https://rt.data.gov.hk/v1/transport/citybus-nwfb";
         
         let map;
         let stopMarkers = [];
-        let polylineLayer = null;
-        let decoratorLayer = null;
         
         let routeStopsData = []; 
         let sortedRouteObjects = []; 
@@ -427,8 +424,15 @@
                 onRouteInputChanged();
             }, 100);
 
+            // 輸入時即時過濾選項
             routeInput.addEventListener('input', (e) => {
                 debouncedInput(e.target.value);
+            });
+
+            // 【重點優化】當點擊或獲取焦點時：全選文字並展示完整選單，方便再次挑選其他路線
+            routeInput.addEventListener('focus', (e) => {
+                e.target.select();
+                updateRouteDatalist('');
             });
 
             routeInput.addEventListener('change', onRouteInputChanged);
@@ -510,7 +514,7 @@
                 const primaryStops = rsData.data || [];
 
                 if (primaryStops.length === 0) {
-                    alert("查無此路線該方向之車站數據（可能為單向線路）。");
+                    alert("查無此路線該方向之車站數據。");
                     loading.style.display = 'none';
                     return;
                 }
@@ -548,7 +552,7 @@
                 stopSelect.appendChild(fragment);
                 stopSelect.disabled = false;
 
-                await renderMapElements(routeStopsData);
+                renderMapElements(routeStopsData);
 
                 if (routeStopsData.length > 0) {
                     stopSelect.value = 0;
@@ -605,51 +609,19 @@
             document.getElementById('update-time-text').textContent = `${hours}:${minutes}:${seconds}`;
         }
 
-        async function fetchAccuratePath(stops) {
-            const chunkSize = 8;
-            let fullPath = [];
-
-            for (let i = 0; i < stops.length - 1; i += chunkSize - 1) {
-                const chunkStops = stops.slice(i, i + chunkSize);
-                const coordsStr = chunkStops.map(s => `${s.long},${s.lat}`).join(';');
-                const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coordsStr}?overview=full&geometries=geojson&continue_straight=true`;
-
-                try {
-                    const res = await fetch(osrmUrl);
-                    if (res.ok) {
-                        const data = await res.json();
-                        if (data.routes && data.routes[0]) {
-                            const coords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
-                            if (fullPath.length > 0 && coords.length > 0) {
-                                fullPath.push(...coords.slice(1));
-                            } else {
-                                fullPath.push(...coords);
-                            }
-                            continue;
-                        }
-                    }
-                } catch (e) {
-                    console.warn("OSRM 擬合備用:", e);
-                }
-
-                const fallbackLine = chunkStops.map(s => [parseFloat(s.lat), parseFloat(s.long)]);
-                if (fullPath.length > 0) {
-                    fullPath.push(...fallbackLine.slice(1));
-                } else {
-                    fullPath.push(...fallbackLine);
-                }
-            }
-            return fullPath;
-        }
-
-        async function renderMapElements(stops) {
+        // 渲染巴士站地標（已移除軌跡與劃線 logic）
+        function renderMapElements(stops) {
             stopMarkers.forEach(m => map.removeLayer(m));
             stopMarkers = [];
-            if (polylineLayer) map.removeLayer(polylineLayer);
-            if (decoratorLayer) map.removeLayer(decoratorLayer);
+
+            if (!stops || stops.length === 0) return;
+
+            const boundsList = [];
 
             stops.forEach((stop, idx) => {
                 const pos = [parseFloat(stop.lat), parseFloat(stop.long)];
+                boundsList.push(pos);
+
                 const marker = L.marker(pos)
                     .addTo(map)
                     .bindPopup(`<div style="font-size: 16px; font-weight: bold; padding: 2px 0; color: #1c1c1e;">${idx + 1}. ${stop.name_tc}</div>`);
@@ -662,29 +634,10 @@
                 stopMarkers.push(marker);
             });
 
-            const accuratePath = await fetchAccuratePath(stops);
-
-            polylineLayer = L.polyline(accuratePath, { 
-                color: '#007aff', 
-                weight: 5, 
-                opacity: 0.85 
-            }).addTo(map);
-
-            decoratorLayer = L.polylineDecorator(polylineLayer, {
-                patterns: [
-                    {
-                        offset: 35,
-                        repeat: 90,
-                        symbol: L.Symbol.arrowHead({
-                            pixelSize: 8,
-                            polygon: false,
-                            pathOptions: { stroke: true, color: '#003e80', weight: 2 }
-                        })
-                    }
-                ]
-            }).addTo(map);
-
-            map.fitBounds(polylineLayer.getBounds(), { padding: [30, 30] });
+            // 自動將地圖視角調整至顯示所有車站
+            if (boundsList.length > 0) {
+                map.fitBounds(L.latLngBounds(boundsList), { padding: [30, 30] });
+            }
         }
 
         // 查詢城巴實時預報 (ETA)
