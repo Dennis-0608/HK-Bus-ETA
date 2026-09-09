@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>香港巴士路線地圖與實時預報</title>
+    <title>城巴路線地圖與實時預報</title>
     
     <!-- Leaflet 地圖樣式 (CSS) -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -231,10 +231,12 @@
 
     <!-- 頂部控制面板 -->
     <div class="control-panel">
+        
+        <!-- 第一行：三項選擇放置在同一行 -->
         <div class="row-top">
             <div class="form-group route-group">
-                <label for="route-input">1. 輸入路線</label>
-                <input type="text" id="route-input" list="route-list" placeholder="如: 1A, 70, A21">
+                <label for="route-input">1. 輸入城巴路線</label>
+                <input type="text" id="route-input" list="route-list" placeholder="如: 70, A21, 10">
                 <datalist id="route-list"></datalist>
             </div>
 
@@ -253,6 +255,7 @@
             </div>
         </div>
 
+        <!-- 第二行：預計到站時間（左側） + 更新時間與按鈕（右側） -->
         <div class="row-bottom">
             <div class="eta-section">
                 <div class="form-group">
@@ -273,11 +276,12 @@
                 </button>
             </div>
         </div>
+
     </div>
 
     <!-- 地圖呈現區域 -->
     <div style="position: relative; flex: 1;">
-        <div id="loading" class="loading-overlay">高精度數據與路線繪製中...</div>
+        <div id="loading" class="loading-overlay">數據與路線繪製中...</div>
         <div id="map"></div>
     </div>
 
@@ -286,7 +290,6 @@
     <script src="https://unpkg.com/leaflet-polylinedecorator@1.6.0/dist/leaflet.polylineDecorator.js"></script>
 
     <script>
-        const API_KMB = "https://data.etabus.gov.hk/v1/transport/kmb";
         const API_CTB = "https://data.etabus.gov.hk/v1/transport/citybus-nwfb";
         
         let map;
@@ -303,9 +306,8 @@
         let currentSelectedStop = null;
         let currentSelectedRoute = null;
         let currentSelectedBound = null;
-        let currentSelectedServiceType = null;
-        let currentIsJoint = false;
 
+        // 工具函式：防抖動 (Debounce)
         function debounce(func, delay = 150) {
             let timer;
             return function(...args) {
@@ -314,23 +316,13 @@
             };
         }
 
-        function getDistanceMeters(lat1, lon1, lat2, lon2) {
-            const R = 6371000;
-            const rad = Math.PI / 180;
-            const dLat = (lat2 - lat1) * rad;
-            const dLon = (lon2 - lon1) * rad;
-            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                      Math.cos(lat1 * rad) * Math.cos(lat2 * rad) *
-                      Math.sin(dLon / 2) * Math.sin(dLon / 2);
-            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        }
-
+        // 去除標籤修飾語
         function cleanRouteName(inputStr) {
             if (!inputStr) return "";
-            return inputStr.replace(/\s*\((九巴|城巴|合辦)\)/g, '').trim().toUpperCase();
+            return inputStr.replace(/\s*\((城巴|九巴|合辦)\)/g, '').trim().toUpperCase();
         }
 
-        // 彈性相容比對城巴與九巴的方向欄位 (O/I 與 outbound/inbound)
+        // 相容方向標籤 (outbound/inbound 或 O/I)
         function isMatchingDir(itemDir, targetBound) {
             if (!itemDir) return true;
             const dirStr = itemDir.toString().toUpperCase();
@@ -361,45 +353,28 @@
             }).addTo(map);
         }
 
-        // 併發獲取全港九巴、城巴與前新巴所有路線
+        // 僅載入城巴（含前新巴）路線資料庫
         async function loadAllRoutes() {
             try {
-                const [kmbRes, ctbRes, nwfbRes] = await Promise.all([
-                    fetch(`${API_KMB}/route`).then(r => r.json()).catch(() => ({ data: [] })),
+                const [ctbRes, nwfbRes] = await Promise.all([
                     fetch(`${API_CTB}/route/CTB`).then(r => r.json()).catch(() => ({ data: [] })),
                     fetch(`${API_CTB}/route/NWFB`).then(r => r.json()).catch(() => ({ data: [] }))
                 ]);
 
                 allRoutesMap = {};
-
-                // 1. 處理九巴路線
-                if (kmbRes && kmbRes.data) {
-                    kmbRes.data.forEach(item => {
-                        const rName = item.route;
-                        if (!allRoutesMap[rName]) allRoutesMap[rName] = { kmb: [], ctb: [] };
-                        allRoutesMap[rName].kmb.push({
-                            bound: item.bound === 'O' ? 'outbound' : 'inbound',
-                            serviceType: item.service_type || "1",
-                            dest: item.dest_tc || item.dest_en || '',
-                            orig: item.orig_tc || item.orig_en || ''
-                        });
-                    });
-                }
-
-                // 2. 處理城巴路線（合併 CTB 及 NWFB 數據，自動拆解為雙向去回程）
                 const ctbRawList = [...(ctbRes.data || []), ...(nwfbRes.data || [])];
                 const ctbSeen = new Set();
 
                 ctbRawList.forEach(item => {
                     const rName = item.route;
                     const co = item.co || 'CTB';
-                    if (!allRoutesMap[rName]) allRoutesMap[rName] = { kmb: [], ctb: [] };
+                    if (!allRoutesMap[rName]) allRoutesMap[rName] = { ctb: [] };
 
                     const uniqueKey = `${co}_${rName}`;
                     if (!ctbSeen.has(uniqueKey)) {
                         ctbSeen.add(uniqueKey);
 
-                        // 去程：往 dest_tc
+                        // 去程 (Outbound)
                         allRoutesMap[rName].ctb.push({
                             co: co,
                             bound: 'outbound',
@@ -407,7 +382,7 @@
                             orig: item.orig_tc || item.orig_en || ''
                         });
 
-                        // 回程：往 orig_tc
+                        // 回程 (Inbound)
                         allRoutesMap[rName].ctb.push({
                             co: co,
                             bound: 'inbound',
@@ -417,33 +392,18 @@
                     }
                 });
 
-                // 3. 分類標記 (九巴)、(城巴)、(合辦)
                 const routeKeys = Object.keys(allRoutesMap).sort((a, b) => 
                     a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
                 );
 
-                sortedRouteObjects = routeKeys.map(rName => {
-                    const hasKmb = allRoutesMap[rName].kmb.length > 0;
-                    const hasCtb = allRoutesMap[rName].ctb.length > 0;
-                    
-                    let typeTag = "";
-                    if (hasKmb && hasCtb) {
-                        typeTag = "(合辦)";
-                    } else if (hasKmb) {
-                        typeTag = "(九巴)";
-                    } else {
-                        typeTag = "(城巴)";
-                    }
-
-                    return {
-                        rawRoute: rName,
-                        displayLabel: `${rName} ${typeTag}`
-                    };
-                });
+                sortedRouteObjects = routeKeys.map(rName => ({
+                    rawRoute: rName,
+                    displayLabel: `${rName} (城巴)`
+                }));
                 
                 updateRouteDatalist(''); 
             } catch (err) {
-                console.error("無法取得路線列表:", err);
+                console.error("無法取得城巴路線列表:", err);
             }
         }
 
@@ -502,34 +462,15 @@
 
             boundSelect.innerHTML = '';
             const routeObj = allRoutesMap[rawRoute];
-            const isJoint = routeObj.kmb.length > 0 && routeObj.ctb.length > 0;
-
-            if (routeObj.kmb.length > 0) {
-                routeObj.kmb.forEach(b => {
-                    const opt = document.createElement('option');
-                    opt.value = JSON.stringify({
-                        company: 'kmb',
-                        bound: b.bound,
-                        serviceType: b.serviceType || "1",
-                        isJoint: isJoint
-                    });
-                    const isSpecial = (b.serviceType && b.serviceType !== "1");
-                    opt.textContent = `[九巴] 往 ${b.dest}${isSpecial ? ' (特別班次)' : ''}`;
-                    boundSelect.appendChild(opt);
-                });
-            }
 
             if (routeObj.ctb.length > 0) {
                 routeObj.ctb.forEach(b => {
                     const opt = document.createElement('option');
                     opt.value = JSON.stringify({
-                        company: 'ctb',
                         ctbCo: b.co || 'CTB',
-                        bound: b.bound,
-                        serviceType: "1",
-                        isJoint: isJoint
+                        bound: b.bound
                     });
-                    opt.textContent = `[城巴] 往 ${b.dest}`;
+                    opt.textContent = `往 ${b.dest}`;
                     boundSelect.appendChild(opt);
                 });
             }
@@ -538,16 +479,13 @@
             loadRouteDetails();
         }
 
-        async function fetchStopDetail(company, stopId) {
-            const cacheKey = `${company}_${stopId}`;
+        // 車站詳細數據快取獲取
+        async function fetchStopDetail(stopId) {
+            const cacheKey = `ctb_${stopId}`;
             if (stopCacheMap[cacheKey]) return stopCacheMap[cacheKey];
 
-            const url = company === 'ctb'
-                ? `${API_CTB}/stop/${stopId}`
-                : `${API_KMB}/stop/${stopId}`;
-
             try {
-                const res = await fetch(url);
+                const res = await fetch(`${API_CTB}/stop/${stopId}`);
                 const json = await res.json();
                 if (json && json.data) {
                     stopCacheMap[cacheKey] = json.data;
@@ -570,86 +508,42 @@
 
             if (!rawRoute || !boundSelectVal) return;
 
-            const { company, bound, serviceType, isJoint, ctbCo } = JSON.parse(boundSelectVal);
+            const { ctbCo, bound } = JSON.parse(boundSelectVal);
 
             loading.style.display = 'flex';
             stopSelect.disabled = true;
             etaDisplay.innerHTML = '<span class="eta-placeholder">請先選擇車站</span>';
 
             try {
-                let primaryStops = [];
-                let ctbStopsForMatching = [];
+                const targetCo = ctbCo || 'CTB';
+                let rsRes = await fetch(`${API_CTB}/route-stop/${targetCo}/${rawRoute}/${bound}`);
+                let rsData = await rsRes.json();
+                let primaryStops = rsData.data || [];
 
-                if (company === 'kmb') {
-                    const rsRes = await fetch(`${API_KMB}/route-stop/${rawRoute}/${bound}/${serviceType}`);
-                    const rsData = await rsRes.json();
+                // 備用相容切換 (CTB/NWFB)
+                if (primaryStops.length === 0) {
+                    const altCo = targetCo === 'CTB' ? 'NWFB' : 'CTB';
+                    rsRes = await fetch(`${API_CTB}/route-stop/${altCo}/${rawRoute}/${bound}`);
+                    rsData = await rsRes.json();
                     primaryStops = rsData.data || [];
-
-                    if (isJoint) {
-                        let ctbRsRes = await fetch(`${API_CTB}/route-stop/CTB/${rawRoute}/${bound}`).catch(() => null);
-                        let ctbRsData = ctbRsRes ? await ctbRsRes.json().catch(() => ({ data: [] })) : { data: [] };
-                        if (!ctbRsData.data || ctbRsData.data.length === 0) {
-                            ctbRsRes = await fetch(`${API_CTB}/route-stop/NWFB/${rawRoute}/${bound}`).catch(() => null);
-                            ctbRsData = ctbRsRes ? await ctbRsRes.json().catch(() => ({ data: [] })) : { data: [] };
-                        }
-                        ctbStopsForMatching = ctbRsData.data || [];
-                    }
-                } else {
-                    const targetCo = ctbCo || 'CTB';
-                    let rsRes = await fetch(`${API_CTB}/route-stop/${targetCo}/${rawRoute}/${bound}`);
-                    let rsData = await rsRes.json();
-                    primaryStops = rsData.data || [];
-
-                    // 容錯備用：若找不到則自動切換 CTB/NWFB 節點
-                    if (primaryStops.length === 0) {
-                        const altCo = targetCo === 'CTB' ? 'NWFB' : 'CTB';
-                        rsRes = await fetch(`${API_CTB}/route-stop/${altCo}/${rawRoute}/${bound}`);
-                        rsData = await rsRes.json();
-                        primaryStops = rsData.data || [];
-                    }
                 }
 
                 if (primaryStops.length === 0) {
-                    alert("查無此路線車站數據。");
+                    alert("查無此城巴路線車站數據。");
                     loading.style.display = 'none';
                     return;
                 }
 
-                const stopPromises = primaryStops.map(s => fetchStopDetail(company, s.stop));
+                const stopPromises = primaryStops.map(s => fetchStopDetail(s.stop));
                 const stopDetails = await Promise.all(stopPromises);
-
-                let ctbDetailsMap = [];
-                if (isJoint && ctbStopsForMatching.length > 0) {
-                    const ctbDetails = await Promise.all(
-                        ctbStopsForMatching.map(s => fetchStopDetail('ctb', s.stop))
-                    );
-                    ctbDetailsMap = ctbDetails.filter(Boolean);
-                }
 
                 routeStopsData = primaryStops.map((s, idx) => {
                     const detail = stopDetails[idx];
                     if (!detail) return null;
 
-                    let matchedCtbStopId = null;
-
-                    if (isJoint && ctbDetailsMap.length > 0) {
-                        const kLat = parseFloat(detail.lat);
-                        const kLon = parseFloat(detail.long);
-
-                        let minDist = 120;
-                        ctbDetailsMap.forEach(cStop => {
-                            const dist = getDistanceMeters(kLat, kLon, parseFloat(cStop.lat), parseFloat(cStop.long));
-                            if (dist < minDist) {
-                                minDist = dist;
-                                matchedCtbStopId = cStop.stop;
-                            }
-                        });
-                    }
-
                     return {
                         seq: s.seq || (idx + 1),
-                        kmbStopId: company === 'kmb' ? detail.stop : null,
-                        ctbStopId: company === 'ctb' ? detail.stop : matchedCtbStopId,
+                        ctbStopId: detail.stop,
                         name_tc: detail.name_tc || detail.name_en || '',
                         lat: detail.lat,
                         long: detail.long
@@ -681,7 +575,7 @@
                 }
 
             } catch (err) {
-                console.error("載入路線詳情失敗:", err);
+                console.error("載入城巴路線詳情失敗:", err);
                 alert("載入數據時發生錯誤。");
             } finally {
                 loading.style.display = 'none';
@@ -702,8 +596,6 @@
                 if (boundVal) {
                     const parsed = JSON.parse(boundVal);
                     currentSelectedBound = parsed.bound;
-                    currentSelectedServiceType = parsed.serviceType;
-                    currentIsJoint = parsed.isJoint;
                 }
                 
                 startAutoRefreshETA();
@@ -814,68 +706,44 @@
             map.fitBounds(polylineLayer.getBounds(), { padding: [30, 30] });
         }
 
+        // 查詢城巴實時預報 (ETA)
         async function fetchETA() {
             const etaDisplay = document.getElementById('eta-display');
-            if (!currentSelectedStop) return;
+            if (!currentSelectedStop || !currentSelectedStop.ctbStopId) return;
 
             const route = currentSelectedRoute;
-            const serviceType = currentSelectedServiceType || "1";
             const now = new Date();
 
-            let fetchPromises = [];
-
-            // 1. 查詢九巴實時預報
-            if (currentSelectedStop.kmbStopId) {
-                const kmbUrl = `${API_KMB}/eta/${currentSelectedStop.kmbStopId}/${route}/${serviceType}`;
-                fetchPromises.push(
-                    fetch(kmbUrl)
-                        .then(r => r.json())
-                        .then(res => ({ co: '九巴', data: res.data || [] }))
-                        .catch(() => ({ co: '九巴', data: [] }))
-                );
-            }
-
-            // 2. 查詢城巴/新巴實時預報 (併發雙端點)
-            if (currentSelectedStop.ctbStopId) {
-                const ctbUrl = `${API_CTB}/eta/CTB/${currentSelectedStop.ctbStopId}/${route}`;
-                const nwfbUrl = `${API_CTB}/eta/NWFB/${currentSelectedStop.ctbStopId}/${route}`;
-
-                fetchPromises.push(
-                    Promise.all([
-                        fetch(ctbUrl).then(r => r.json()).catch(() => ({ data: [] })),
-                        fetch(nwfbUrl).then(r => r.json()).catch(() => ({ data: [] }))
-                    ]).then(([r1, r2]) => {
-                        const merged = [...(r1.data || []), ...(r2.data || [])];
-                        return { co: '城巴', data: merged };
-                    }).catch(() => ({ co: '城巴', data: [] }))
-                );
-            }
+            const ctbUrl = `${API_CTB}/eta/CTB/${currentSelectedStop.ctbStopId}/${route}`;
+            const nwfbUrl = `${API_CTB}/eta/NWFB/${currentSelectedStop.ctbStopId}/${route}`;
 
             try {
-                const results = await Promise.all(fetchPromises);
+                const [r1, r2] = await Promise.all([
+                    fetch(ctbUrl).then(r => r.json()).catch(() => ({ data: [] })),
+                    fetch(nwfbUrl).then(r => r.json()).catch(() => ({ data: [] }))
+                ]);
+
                 updateTimestampUI();
 
+                const mergedData = [...(r1.data || []), ...(r2.data || [])];
                 let combinedEtas = [];
                 const seenKeys = new Set();
 
-                results.forEach(res => {
-                    const companyName = res.co;
-                    res.data.forEach(item => {
-                        if (isMatchingDir(item.dir, currentSelectedBound) && item.eta) {
-                            const etaTime = new Date(item.eta);
-                            const diffSec = (etaTime - now) / 1000;
-                            const uniqueKey = `${companyName}_${etaTime.getTime()}`;
+                mergedData.forEach(item => {
+                    if (isMatchingDir(item.dir, currentSelectedBound) && item.eta) {
+                        const etaTime = new Date(item.eta);
+                        const diffSec = (etaTime - now) / 1000;
+                        const uniqueKey = `${etaTime.getTime()}`;
 
-                            if (diffSec >= -30 && !seenKeys.has(uniqueKey)) {
-                                seenKeys.add(uniqueKey);
-                                combinedEtas.push({
-                                    company: companyName,
-                                    diffSec: diffSec,
-                                    rmk: item.rmk_tc || item.rmk_en || ''
-                                });
-                            }
+                        if (diffSec >= -30 && !seenKeys.has(uniqueKey)) {
+                            seenKeys.add(uniqueKey);
+                            combinedEtas.push({
+                                company: '城巴',
+                                diffSec: diffSec,
+                                rmk: item.rmk_tc || item.rmk_en || ''
+                            });
                         }
-                    });
+                    }
                 });
 
                 combinedEtas.sort((a, b) => a.diffSec - b.diffSec);
@@ -913,7 +781,7 @@
                 etaDisplay.innerHTML = html;
 
             } catch (err) {
-                console.error("抓取 ETA 失敗:", err);
+                console.error("抓取城巴 ETA 失敗:", err);
                 etaDisplay.innerHTML = '<span class="eta-placeholder">ETA 載入失敗</span>';
             }
         }
