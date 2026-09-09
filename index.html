@@ -99,7 +99,6 @@
             gap: 4px;
         }
 
-        /* 優化 ETA 顯示框：加大行距與內邊距 */
         .eta-box {
             background: #eef5ff;
             border: 1px solid #b8d7ff;
@@ -112,7 +111,6 @@
             overflow-x: auto;
         }
 
-        /* 優化 ETA 標籤：加大間距與行高 */
         .eta-badge {
             background: #007aff;
             color: #fff;
@@ -233,12 +231,10 @@
 
     <!-- 頂部控制面板 -->
     <div class="control-panel">
-        
-        <!-- 第一行：三項選擇放置在同一行 -->
         <div class="row-top">
             <div class="form-group route-group">
                 <label for="route-input">1. 輸入路線</label>
-                <input type="text" id="route-input" list="route-list" placeholder="如: 1A, 101, 70">
+                <input type="text" id="route-input" list="route-list" placeholder="如: 1A, 70, A21">
                 <datalist id="route-list"></datalist>
             </div>
 
@@ -257,7 +253,6 @@
             </div>
         </div>
 
-        <!-- 第二行：預計到站時間（左側） + 更新時間與按鈕（右側） -->
         <div class="row-bottom">
             <div class="eta-section">
                 <div class="form-group">
@@ -278,12 +273,11 @@
                 </button>
             </div>
         </div>
-
     </div>
 
     <!-- 地圖呈現區域 -->
     <div style="position: relative; flex: 1;">
-        <div id="loading" class="loading-overlay">高精度數據與路線繪製中...</div>
+        <div id="loading" class="loading-overlay">數據與路線繪製中...</div>
         <div id="map"></div>
     </div>
 
@@ -301,9 +295,9 @@
         let decoratorLayer = null;
         
         let routeStopsData = []; 
-        let sortedRouteObjects = []; // 儲存包含標籤的路線物件
+        let sortedRouteObjects = []; 
         let allRoutesMap = {}; 
-        let stopCacheMap = {}; // 車站數據快取
+        let stopCacheMap = {}; 
         let etaTimer = null;
         
         let currentSelectedStop = null;
@@ -312,7 +306,6 @@
         let currentSelectedServiceType = null;
         let currentIsJoint = false;
 
-        // 工具函式：防抖動 (Debounce)
         function debounce(func, delay = 150) {
             let timer;
             return function(...args) {
@@ -321,7 +314,6 @@
             };
         }
 
-        // 工具函式：計算經緯度球面距離（公尺）
         function getDistanceMeters(lat1, lon1, lat2, lon2) {
             const R = 6371000;
             const rad = Math.PI / 180;
@@ -333,10 +325,21 @@
             return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         }
 
-        // 解析用戶輸入的路線名稱，去除後綴 (九巴)/(城巴)/(合辦)
         function cleanRouteName(inputStr) {
             if (!inputStr) return "";
             return inputStr.replace(/\s*\((九巴|城巴|合辦)\)/g, '').trim().toUpperCase();
+        }
+
+        // 檢查 API 的方向欄位 (O/I 或 outbound/inbound) 是否匹配
+        function isMatchingDir(itemDir, targetBound) {
+            if (!itemDir) return true;
+            const dirStr = itemDir.toString().toUpperCase();
+            if (targetBound === 'outbound') {
+                return dirStr === 'O' || dirStr === 'OUTBOUND';
+            } else if (targetBound === 'inbound') {
+                return dirStr === 'I' || dirStr === 'INBOUND';
+            }
+            return true;
         }
 
         window.onload = function() {
@@ -354,21 +357,22 @@
 
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                attribution: '&copy; OpenStreetMap'
             }).addTo(map);
         }
 
-        // 需求 1: 同時載入九巴及城巴全港路線數據庫
+        // 同時獲取九巴與城巴 (包含 CTB 與 NWFB 歷史數據接口) 全港路線
         async function loadAllRoutes() {
             try {
-                const [kmbRes, ctbRes] = await Promise.all([
+                const [kmbRes, ctbRes, nwfbRes] = await Promise.all([
                     fetch(`${API_KMB}/route`).then(r => r.json()).catch(() => ({ data: [] })),
-                    fetch(`${API_CTB}/route/CTB`).then(r => r.json()).catch(() => ({ data: [] }))
+                    fetch(`${API_CTB}/route/CTB`).then(r => r.json()).catch(() => ({ data: [] })),
+                    fetch(`${API_CTB}/route/NWFB`).then(r => r.json()).catch(() => ({ data: [] }))
                 ]);
 
                 allRoutesMap = {};
 
-                // 處理九巴路線
+                // 1. 處理九巴路線
                 if (kmbRes && kmbRes.data) {
                     kmbRes.data.forEach(item => {
                         const rName = item.route;
@@ -376,26 +380,35 @@
                         allRoutesMap[rName].kmb.push({
                             bound: item.bound === 'O' ? 'outbound' : 'inbound',
                             serviceType: item.service_type || "1",
-                            dest: item.dest_tc,
-                            orig: item.orig_tc
+                            dest: item.dest_tc || item.dest_en || '',
+                            orig: item.orig_tc || item.orig_en || ''
                         });
                     });
                 }
 
-                // 處理城巴路線
-                if (ctbRes && ctbRes.data) {
-                    ctbRes.data.forEach(item => {
-                        const rName = item.route;
+                // 2. 處理城巴路線（合併 CTB 與 NWFB 接口數據並去重）
+                const ctbRawList = [...(ctbRes.data || []), ...(nwfbRes.data || [])];
+                const ctbSeen = new Set();
+
+                ctbRawList.forEach(item => {
+                    const rName = item.route;
+                    const dir = item.dir === 'outbound' ? 'outbound' : 'inbound';
+                    const co = item.co || 'CTB';
+                    const uniqueKey = `${rName}_${dir}_${item.dest_tc}`;
+
+                    if (!ctbSeen.has(uniqueKey)) {
+                        ctbSeen.add(uniqueKey);
                         if (!allRoutesMap[rName]) allRoutesMap[rName] = { kmb: [], ctb: [] };
                         allRoutesMap[rName].ctb.push({
-                            bound: item.dir === 'outbound' ? 'outbound' : 'inbound',
-                            dest: item.dest_tc,
-                            orig: item.orig_tc
+                            co: co,
+                            bound: dir,
+                            dest: item.dest_tc || item.dest_en || '',
+                            orig: item.orig_tc || item.orig_en || ''
                         });
-                    });
-                }
+                    }
+                });
 
-                // 需求 2: 為所有路線分類並標示 (九巴)、(城巴)、(合辦)
+                // 3. 排序與標示標籤
                 const routeKeys = Object.keys(allRoutesMap).sort((a, b) => 
                     a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
                 );
@@ -434,9 +447,9 @@
                 : sortedRouteObjects;
 
             const fragment = document.createDocumentFragment();
-            filtered.slice(0, 60).forEach(item => {
+            filtered.slice(0, 80).forEach(item => {
                 const opt = document.createElement('option');
-                opt.value = item.displayLabel; // 顯示帶有 (九巴)/(城巴)/(合辦) 的完整字樣
+                opt.value = item.displayLabel;
                 fragment.appendChild(opt);
             });
 
@@ -451,54 +464,14 @@
 
             const debouncedInput = debounce((val) => {
                 updateRouteDatalist(val);
+                onRouteInputChanged();
             }, 100);
 
             routeInput.addEventListener('input', (e) => {
                 debouncedInput(e.target.value);
             });
 
-            routeInput.addEventListener('change', () => {
-                const rawRoute = cleanRouteName(routeInput.value);
-                if (!rawRoute || !allRoutesMap[rawRoute]) return;
-
-                boundSelect.innerHTML = '';
-                const routeObj = allRoutesMap[rawRoute];
-                const isJoint = routeObj.kmb.length > 0 && routeObj.ctb.length > 0;
-
-                // 需求 3: 選擇方向時，明確區分九巴及城巴方向
-                if (routeObj.kmb.length > 0) {
-                    routeObj.kmb.forEach(b => {
-                        const opt = document.createElement('option');
-                        opt.value = JSON.stringify({
-                            company: 'kmb',
-                            bound: b.bound,
-                            serviceType: b.serviceType || "1",
-                            isJoint: isJoint
-                        });
-                        const isSpecial = (b.serviceType && b.serviceType !== "1");
-                        opt.textContent = `[九巴] 往 ${b.dest}${isSpecial ? ' (特別班次)' : ''}`;
-                        boundSelect.appendChild(opt);
-                    });
-                }
-
-                if (routeObj.ctb.length > 0) {
-                    routeObj.ctb.forEach(b => {
-                        const opt = document.createElement('option');
-                        opt.value = JSON.stringify({
-                            company: 'ctb',
-                            bound: b.bound,
-                            serviceType: "1",
-                            isJoint: isJoint
-                        });
-                        opt.textContent = `[城巴] 往 ${b.dest}`;
-                        boundSelect.appendChild(opt);
-                    });
-                }
-
-                boundSelect.disabled = false;
-                loadRouteDetails();
-            });
-
+            routeInput.addEventListener('change', onRouteInputChanged);
             boundSelect.addEventListener('change', loadRouteDetails);
 
             stopSelect.addEventListener('change', (e) => {
@@ -508,7 +481,54 @@
             });
         }
 
-        // 快取的車站資料獲取
+        function onRouteInputChanged() {
+            const rawRoute = cleanRouteName(document.getElementById('route-input').value);
+            const boundSelect = document.getElementById('bound-select');
+
+            if (!rawRoute || !allRoutesMap[rawRoute]) {
+                boundSelect.innerHTML = '<option value="">選路線</option>';
+                boundSelect.disabled = true;
+                return;
+            }
+
+            boundSelect.innerHTML = '';
+            const routeObj = allRoutesMap[rawRoute];
+            const isJoint = routeObj.kmb.length > 0 && routeObj.ctb.length > 0;
+
+            if (routeObj.kmb.length > 0) {
+                routeObj.kmb.forEach(b => {
+                    const opt = document.createElement('option');
+                    opt.value = JSON.stringify({
+                        company: 'kmb',
+                        bound: b.bound,
+                        serviceType: b.serviceType || "1",
+                        isJoint: isJoint
+                    });
+                    const isSpecial = (b.serviceType && b.serviceType !== "1");
+                    opt.textContent = `[九巴] 往 ${b.dest}${isSpecial ? ' (特別班次)' : ''}`;
+                    boundSelect.appendChild(opt);
+                });
+            }
+
+            if (routeObj.ctb.length > 0) {
+                routeObj.ctb.forEach(b => {
+                    const opt = document.createElement('option');
+                    opt.value = JSON.stringify({
+                        company: 'ctb',
+                        ctbCo: b.co || 'CTB',
+                        bound: b.bound,
+                        serviceType: "1",
+                        isJoint: isJoint
+                    });
+                    opt.textContent = `[城巴] 往 ${b.dest}`;
+                    boundSelect.appendChild(opt);
+                });
+            }
+
+            boundSelect.disabled = false;
+            loadRouteDetails();
+        }
+
         async function fetchStopDetail(company, stopId) {
             const cacheKey = `${company}_${stopId}`;
             if (stopCacheMap[cacheKey]) return stopCacheMap[cacheKey];
@@ -541,7 +561,7 @@
 
             if (!rawRoute || !boundSelectVal) return;
 
-            const { company, bound, serviceType, isJoint } = JSON.parse(boundSelectVal);
+            const { company, bound, serviceType, isJoint, ctbCo } = JSON.parse(boundSelectVal);
 
             loading.style.display = 'flex';
             stopSelect.disabled = true;
@@ -557,14 +577,27 @@
                     primaryStops = rsData.data || [];
 
                     if (isJoint) {
-                        const ctbRsRes = await fetch(`${API_CTB}/route-stop/CTB/${rawRoute}/${bound}`).catch(() => ({ data: [] }));
-                        const ctbRsData = await ctbRsRes.json().catch(() => ({ data: [] }));
+                        let ctbRsRes = await fetch(`${API_CTB}/route-stop/CTB/${rawRoute}/${bound}`).catch(() => null);
+                        let ctbRsData = ctbRsRes ? await ctbRsRes.json().catch(() => ({ data: [] })) : { data: [] };
+                        if (!ctbRsData.data || ctbRsData.data.length === 0) {
+                            ctbRsRes = await fetch(`${API_CTB}/route-stop/NWFB/${rawRoute}/${bound}`).catch(() => null);
+                            ctbRsData = ctbRsRes ? await ctbRsRes.json().catch(() => ({ data: [] })) : { data: [] };
+                        }
                         ctbStopsForMatching = ctbRsData.data || [];
                     }
                 } else {
-                    const rsRes = await fetch(`${API_CTB}/route-stop/CTB/${rawRoute}/${bound}`);
-                    const rsData = await rsRes.json();
+                    const targetCo = ctbCo || 'CTB';
+                    let rsRes = await fetch(`${API_CTB}/route-stop/${targetCo}/${rawRoute}/${bound}`);
+                    let rsData = await rsRes.json();
                     primaryStops = rsData.data || [];
+
+                    // 容錯備用：若找不到則嘗試另一個公司代碼
+                    if (primaryStops.length === 0) {
+                        const altCo = targetCo === 'CTB' ? 'NWFB' : 'CTB';
+                        rsRes = await fetch(`${API_CTB}/route-stop/${altCo}/${rawRoute}/${bound}`);
+                        rsData = await rsRes.json();
+                        primaryStops = rsData.data || [];
+                    }
                 }
 
                 if (primaryStops.length === 0) {
@@ -590,7 +623,6 @@
 
                     let matchedCtbStopId = null;
 
-                    // 合辦路線站點精密地理位置配對 (<= 120米)
                     if (isJoint && ctbDetailsMap.length > 0) {
                         const kLat = parseFloat(detail.lat);
                         const kLon = parseFloat(detail.long);
@@ -609,7 +641,7 @@
                         seq: s.seq || (idx + 1),
                         kmbStopId: company === 'kmb' ? detail.stop : null,
                         ctbStopId: company === 'ctb' ? detail.stop : matchedCtbStopId,
-                        name_tc: detail.name_tc,
+                        name_tc: detail.name_tc || detail.name_en || '',
                         lat: detail.lat,
                         long: detail.long
                     };
@@ -773,13 +805,11 @@
             map.fitBounds(polylineLayer.getBounds(), { padding: [30, 30] });
         }
 
-        // 需求 4: 合辦路線後台同時讀取九巴與城巴 ETA，混合排序選出最近 3 個班次
         async function fetchETA() {
             const etaDisplay = document.getElementById('eta-display');
             if (!currentSelectedStop) return;
 
             const route = currentSelectedRoute;
-            const dirCode = (currentSelectedBound === 'outbound') ? 'O' : 'I';
             const serviceType = currentSelectedServiceType || "1";
             const now = new Date();
 
@@ -796,14 +826,19 @@
                 );
             }
 
-            // 2. 查詢城巴實時預報
+            // 2. 查詢城巴/新巴實時預報 (併發請求兩大 API 節點)
             if (currentSelectedStop.ctbStopId) {
                 const ctbUrl = `${API_CTB}/eta/CTB/${currentSelectedStop.ctbStopId}/${route}`;
+                const nwfbUrl = `${API_CTB}/eta/NWFB/${currentSelectedStop.ctbStopId}/${route}`;
+
                 fetchPromises.push(
-                    fetch(ctbUrl)
-                        .then(r => r.json())
-                        .then(res => ({ co: '城巴', data: res.data || [] }))
-                        .catch(() => ({ co: '城巴', data: [] }))
+                    Promise.all([
+                        fetch(ctbUrl).then(r => r.json()).catch(() => ({ data: [] })),
+                        fetch(nwfbUrl).then(r => r.json()).catch(() => ({ data: [] }))
+                    ]).then(([r1, r2]) => {
+                        const merged = [...(r1.data || []), ...(r2.data || [])];
+                        return { co: '城巴', data: merged };
+                    }).catch(() => ({ co: '城巴', data: [] }))
                 );
             }
 
@@ -812,28 +847,29 @@
                 updateTimestampUI();
 
                 let combinedEtas = [];
+                const seenKeys = new Set();
 
                 results.forEach(res => {
                     const companyName = res.co;
                     res.data.forEach(item => {
-                        if (item.dir === dirCode && item.eta) {
+                        if (isMatchingDir(item.dir, currentSelectedBound) && item.eta) {
                             const etaTime = new Date(item.eta);
                             const diffSec = (etaTime - now) / 1000;
-                            if (diffSec >= -30) {
+                            const uniqueKey = `${companyName}_${etaTime.getTime()}`;
+
+                            if (diffSec >= -30 && !seenKeys.has(uniqueKey)) {
+                                seenKeys.add(uniqueKey);
                                 combinedEtas.push({
                                     company: companyName,
                                     diffSec: diffSec,
-                                    rmk: item.rmk_tc || ''
+                                    rmk: item.rmk_tc || item.rmk_en || ''
                                 });
                             }
                         }
                     });
                 });
 
-                // 按預計到達時間（秒數差異）由近至遠排序
                 combinedEtas.sort((a, b) => a.diffSec - b.diffSec);
-
-                // 優先選擇最快到達的 3 個班次
                 const top3 = combinedEtas.slice(0, 3);
 
                 if (top3.length === 0) {
@@ -841,7 +877,6 @@
                     return;
                 }
 
-                // 渲染 ETA 標籤與營運公司名稱
                 const html = top3.map(item => {
                     let timeText = "";
                     let badgeClass = "";
