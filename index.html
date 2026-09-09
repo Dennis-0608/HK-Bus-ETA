@@ -277,7 +277,7 @@
 
     <!-- 地圖呈現區域 -->
     <div style="position: relative; flex: 1;">
-        <div id="loading" class="loading-overlay">數據與路線繪製中...</div>
+        <div id="loading" class="loading-overlay">高精度數據與路線繪製中...</div>
         <div id="map"></div>
     </div>
 
@@ -330,7 +330,7 @@
             return inputStr.replace(/\s*\((九巴|城巴|合辦)\)/g, '').trim().toUpperCase();
         }
 
-        // 檢查 API 的方向欄位 (O/I 或 outbound/inbound) 是否匹配
+        // 彈性相容比對城巴與九巴的方向欄位 (O/I 與 outbound/inbound)
         function isMatchingDir(itemDir, targetBound) {
             if (!itemDir) return true;
             const dirStr = itemDir.toString().toUpperCase();
@@ -361,7 +361,7 @@
             }).addTo(map);
         }
 
-        // 同時獲取九巴與城巴 (包含 CTB 與 NWFB 歷史數據接口) 全港路線
+        // 併發獲取全港九巴、城巴與前新巴所有路線
         async function loadAllRoutes() {
             try {
                 const [kmbRes, ctbRes, nwfbRes] = await Promise.all([
@@ -386,29 +386,38 @@
                     });
                 }
 
-                // 2. 處理城巴路線（合併 CTB 與 NWFB 接口數據並去重）
+                // 2. 處理城巴路線（合併 CTB 及 NWFB 數據，自動拆解為雙向去回程）
                 const ctbRawList = [...(ctbRes.data || []), ...(nwfbRes.data || [])];
                 const ctbSeen = new Set();
 
                 ctbRawList.forEach(item => {
                     const rName = item.route;
-                    const dir = item.dir === 'outbound' ? 'outbound' : 'inbound';
                     const co = item.co || 'CTB';
-                    const uniqueKey = `${rName}_${dir}_${item.dest_tc}`;
+                    if (!allRoutesMap[rName]) allRoutesMap[rName] = { kmb: [], ctb: [] };
 
+                    const uniqueKey = `${co}_${rName}`;
                     if (!ctbSeen.has(uniqueKey)) {
                         ctbSeen.add(uniqueKey);
-                        if (!allRoutesMap[rName]) allRoutesMap[rName] = { kmb: [], ctb: [] };
+
+                        // 去程：往 dest_tc
                         allRoutesMap[rName].ctb.push({
                             co: co,
-                            bound: dir,
+                            bound: 'outbound',
                             dest: item.dest_tc || item.dest_en || '',
                             orig: item.orig_tc || item.orig_en || ''
+                        });
+
+                        // 回程：往 orig_tc
+                        allRoutesMap[rName].ctb.push({
+                            co: co,
+                            bound: 'inbound',
+                            dest: item.orig_tc || item.orig_en || '',
+                            orig: item.dest_tc || item.dest_en || ''
                         });
                     }
                 });
 
-                // 3. 排序與標示標籤
+                // 3. 分類標記 (九巴)、(城巴)、(合辦)
                 const routeKeys = Object.keys(allRoutesMap).sort((a, b) => 
                     a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
                 );
@@ -591,7 +600,7 @@
                     let rsData = await rsRes.json();
                     primaryStops = rsData.data || [];
 
-                    // 容錯備用：若找不到則嘗試另一個公司代碼
+                    // 容錯備用：若找不到則自動切換 CTB/NWFB 節點
                     if (primaryStops.length === 0) {
                         const altCo = targetCo === 'CTB' ? 'NWFB' : 'CTB';
                         rsRes = await fetch(`${API_CTB}/route-stop/${altCo}/${rawRoute}/${bound}`);
@@ -826,7 +835,7 @@
                 );
             }
 
-            // 2. 查詢城巴/新巴實時預報 (併發請求兩大 API 節點)
+            // 2. 查詢城巴/新巴實時預報 (併發雙端點)
             if (currentSelectedStop.ctbStopId) {
                 const ctbUrl = `${API_CTB}/eta/CTB/${currentSelectedStop.ctbStopId}/${route}`;
                 const nwfbUrl = `${API_CTB}/eta/NWFB/${currentSelectedStop.ctbStopId}/${route}`;
