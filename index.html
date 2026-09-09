@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>香港巴士路線地圖地圖預覽</title>
+    <title>香港巴士路線地圖預覽</title>
     
     <!-- Leaflet 地圖樣式 (CSS) -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -95,65 +95,81 @@
         <div class="form-group">
             <label for="bound-select">2. 選擇方向</label>
             <select id="bound-select" disabled>
-                <option value="outbound">去程</option>
-                <option value="inbound">回程</option>
+                <option value="">請先選擇路線</option>
             </select>
         </div>
 
         <div class="form-group">
-            <label for="stop-select">3. 選擇巴士站 (無須重新搜尋路線)</label>
+            <label for="stop-select">3. 選擇巴士站</label>
             <select id="stop-select" disabled>
-                <option value="">請先選擇路線</option>
+                <option value="">請先選擇路線與方向</option>
             </select>
         </div>
     </div>
 
     <!-- 地圖呈現區域 -->
     <div style="position: relative; flex: 1;">
-        <div id="loading" class="loading-overlay">數據載入中...</div>
+        <div id="loading" class="loading-overlay">數據與路線繪製中...</div>
         <div id="map"></div>
     </div>
 
-    <!-- Leaflet 地圖 JavaScript 庫 -->
+    <!-- Leaflet 地圖 JavaScript 庫與箭咀外掛 -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-polylinedecorator@1.6.0/dist/leaflet.polylineDecorator.js"></script>
 
     <script>
-        // API 基礎地址 (data.gov.hk / 九巴 Open API)
         const API_BASE = "https://data.etabus.gov.hk/v1/transport/kmb";
         
         let map;
         let stopMarkers = [];
         let polylineLayer = null;
-        let routeStopsData = []; // 緩存目前路線的站點資訊
+        let decoratorLayer = null;
+        let routeStopsData = []; 
+        let allRoutesMap = {}; // 儲存所有路線及其方向數據
 
-        // 初始化頁面與地圖
         window.onload = function() {
             initMap();
             loadAllRoutes();
             setupEventListeners();
         };
 
-        // 1. 初始化 Leaflet 地圖 (以香港中心點為基礎)
+        // 1. 初始化 Leaflet 地圖
         function initMap() {
-            map = L.map('map').setView([22.3193, 114.1694], 12); // 香港中心座標
+            map = L.map('map').setView([22.3193, 114.1694], 12);
             
-            // 使用 OpenStreetMap 免費地圖圖層
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
                 attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             }).addTo(map);
         }
 
-        // 2. 載入全港九巴路線清單
+        // 2. 載入全港九巴路線清單並整理方向終點站
         async function loadAllRoutes() {
             try {
                 const res = await fetch(`${API_BASE}/route`);
                 const data = await res.json();
                 
                 const routeList = document.getElementById('route-list');
-                const routes = Array.from(new Set(data.data.map(r => r.route))).sort();
                 
-                routes.forEach(route => {
+                // 整理路線及方向 (包含起點/終點名稱)
+                data.data.forEach(item => {
+                    const rName = item.route;
+                    if (!allRoutesMap[rName]) {
+                        allRoutesMap[rName] = [];
+                    }
+                    // 只保留主線 service_type === '1'，避免重複載入特別班次
+                    if (item.service_type === "1") {
+                        allRoutesMap[rName].push({
+                            bound: item.bound === 'O' ? 'outbound' : 'inbound',
+                            dest: item.dest_tc,
+                            orig: item.orig_tc
+                        });
+                    }
+                });
+
+                // 填入 datalist 供使用者輸入建議
+                const sortedRoutes = Object.keys(allRoutesMap).sort();
+                sortedRoutes.forEach(route => {
                     const opt = document.createElement('option');
                     opt.value = route;
                     routeList.appendChild(opt);
@@ -163,14 +179,27 @@
             }
         }
 
-        // 3. 事件監聽設定
+        // 3. 設定事件監聽
         function setupEventListeners() {
             const routeInput = document.getElementById('route-input');
             const boundSelect = document.getElementById('bound-select');
             const stopSelect = document.getElementById('stop-select');
 
-            // 路線變更時
+            // 路線變更時：更新方向下拉選單
             routeInput.addEventListener('change', () => {
+                const route = routeInput.value.trim().toUpperCase();
+                if (!route || !allRoutesMap[route]) return;
+
+                boundSelect.innerHTML = '';
+                const bounds = allRoutesMap[route];
+                
+                bounds.forEach(b => {
+                    const opt = document.createElement('option');
+                    opt.value = b.bound;
+                    opt.textContent = `往 ${b.dest}`;
+                    boundSelect.appendChild(opt);
+                });
+
                 boundSelect.disabled = false;
                 loadRouteDetails();
             });
@@ -178,37 +207,33 @@
             // 方向變更時
             boundSelect.addEventListener('change', loadRouteDetails);
 
-            // 車站變更時 (點擊下拉選單即時定位地圖)
+            // 車站變更時：跳轉地圖定位
             stopSelect.addEventListener('change', (e) => {
                 const stopId = e.target.value;
                 if (!stopId) return;
 
                 const targetStop = routeStopsData.find(s => s.stop === stopId);
                 if (targetStop) {
-                    // 將地圖移動至選定車站，並放大至 17 級
                     map.flyTo([targetStop.lat, targetStop.long], 17, { duration: 1.2 });
-                    
-                    // 自動開啟對應站點的彈出氣泡 (Popup)
                     const marker = stopMarkers.find(m => m.stopId === stopId);
                     if (marker) marker.openPopup();
                 }
             });
         }
 
-        // 4. 根據路線與方向取得車站數據並繪製地圖
+        // 4. 取得車站數據並發起圖形繪製
         async function loadRouteDetails() {
             const route = document.getElementById('route-input').value.trim().toUpperCase();
             const bound = document.getElementById('bound-select').value;
             const stopSelect = document.getElementById('stop-select');
             const loading = document.getElementById('loading');
 
-            if (!route) return;
+            if (!route || !bound) return;
 
             loading.style.display = 'flex';
             stopSelect.disabled = true;
 
             try {
-                // A. 取得路線的車站順序 (Route-Stop API)
                 const rsRes = await fetch(`${API_BASE}/route-stop/${route}/${bound}/1`);
                 const rsData = await rsRes.json();
                 const stopList = rsData.data;
@@ -219,15 +244,14 @@
                     return;
                 }
 
-                // B. 平行請求 (Promise.all) 取得每個車站的名稱與座標 (Stop API)
+                // 取得各站點詳細資訊 (名稱與坐標)
                 const stopPromises = stopList.map(s => 
                     fetch(`${API_BASE}/stop/${s.stop}`).then(res => res.json())
                 );
                 const stopResults = await Promise.all(stopPromises);
-                
                 routeStopsData = stopResults.map(r => r.data);
 
-                // C. 更新車站下拉選單 (使用者可隨時單獨切換)
+                // 更新車站選單
                 stopSelect.innerHTML = '<option value="">-- 請選擇車站 --</option>';
                 routeStopsData.forEach((stop, idx) => {
                     const opt = document.createElement('option');
@@ -237,8 +261,8 @@
                 });
                 stopSelect.disabled = false;
 
-                // D. 繪製地圖標記與路線
-                renderMapElements(routeStopsData);
+                // 繪製標記與真實路網
+                await renderMapElements(routeStopsData);
 
             } catch (err) {
                 console.error("載入路線詳情失敗:", err);
@@ -248,41 +272,72 @@
             }
         }
 
-        // 5. 地圖渲染：標記與路線軌跡
-        function renderMapElements(stops) {
-            // 清除舊有的標記與畫線
+        // 5. 地圖渲染：站點標記、真實駕駛路線與方向箭咀
+        async function renderMapElements(stops) {
+            // 清除舊圖層
             stopMarkers.forEach(m => map.removeLayer(m));
             stopMarkers = [];
             if (polylineLayer) map.removeLayer(polylineLayer);
+            if (decoratorLayer) map.removeLayer(decoratorLayer);
 
-            const latLngs = [];
+            const stopCoords = stops.map(s => [parseFloat(s.lat), parseFloat(s.long)]);
 
+            // 繪製車站標記 (Marker)
             stops.forEach((stop, idx) => {
-                const lat = parseFloat(stop.lat);
-                const lng = parseFloat(stop.long);
-                const pos = [lat, lng];
-                latLngs.push(pos);
-
-                // 建立車站標記 (Marker)
+                const pos = [parseFloat(stop.lat), parseFloat(stop.long)];
                 const marker = L.marker(pos)
                     .addTo(map)
                     .bindPopup(`<b>${idx + 1}. ${stop.name_tc}</b><br>${stop.name_en}`);
 
-                // 車站 Marker 的獨立標識
                 marker.stopId = stop.stop;
-
-                // 點擊地圖上的 Marker 時同步更新下拉選單
                 marker.on('click', () => {
                     document.getElementById('stop-select').value = stop.stop;
                 });
-
                 stopMarkers.push(marker);
             });
 
-            // 連結各車站連成路線 (Polyline)
-            polylineLayer = L.polyline(latLngs, { color: '#007aff', weight: 4, opacity: 0.8 }).addTo(map);
+            // 擷取真實行車道路網絡軌跡 (利用 OSRM API)
+            let actualPath = stopCoords; // 若路網請求失敗，自動降級回直線
+            try {
+                // OSRM 接收經緯度格式為: lng,lat;lng,lat...
+                const osrmCoordsStr = stops.map(s => `${s.long},${s.lat}`).join(';');
+                const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${osrmCoordsStr}?overview=full&geometries=geojson`;
 
-            // 自動調整地圖視野以包含整條路線
+                const osrmRes = await fetch(osrmUrl);
+                if (osrmRes.ok) {
+                    const osrmData = await osrmRes.json();
+                    if (osrmData.routes && osrmData.routes[0]) {
+                        // 轉換 GeoJSON [lng, lat] 為 Leaflet [lat, lng]
+                        actualPath = osrmData.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+                    }
+                }
+            } catch (e) {
+                console.warn("未能取得道路路網，切換為點對點直線繪製:", e);
+            }
+
+            // 畫出貼合道路的藍色路線
+            polylineLayer = L.polyline(actualPath, { 
+                color: '#007aff', 
+                weight: 5, 
+                opacity: 0.8 
+            }).addTo(map);
+
+            // 在路線上加入方向箭咀
+            decoratorLayer = L.polylineDecorator(polylineLayer, {
+                patterns: [
+                    {
+                        offset: 30, // 起始距離
+                        repeat: 80, // 每隔 80 像素重複繪製一個箭咀
+                        symbol: L.Symbol.arrowHead({
+                            pixelSize: 8,
+                            polygon: false,
+                            pathOptions: { stroke: true, color: '#003e80', weight: 2 }
+                        })
+                    }
+                ]
+            }).addTo(map);
+
+            // 自動調整地圖視野涵蓋全線
             map.fitBounds(polylineLayer.getBounds(), { padding: [30, 30] });
         }
     </script>
