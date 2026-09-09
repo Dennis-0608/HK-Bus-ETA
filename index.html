@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>香港巴士路線地圖與實時預報預覽</title>
+    <title>香港巴士路線地圖與實時預報</title>
     
     <!-- Leaflet 地圖樣式 (CSS) -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -85,6 +85,17 @@
             display: flex;
             flex-direction: column;
             align-items: center;
+            transition: background-color 0.3s;
+        }
+
+        /* 狀態樣式：即將到達 (橘黃) */
+        .eta-badge.arriving {
+            background-color: #ff9500;
+        }
+
+        /* 狀態樣式：正在離開 (灰色) */
+        .eta-badge.leaving {
+            background-color: #8e8e93;
         }
 
         .eta-badge .eta-rmk {
@@ -144,9 +155,9 @@
             </select>
         </div>
 
-        <!-- 4. 新增：實時到站預報 -->
+        <!-- 4. 實時到站預報 -->
         <div class="form-group">
-            <label>4. 下3班車預計到站時間 (ETA)</label>
+            <label>4. 預計到站時間</label>
             <div id="eta-display" class="eta-box">
                 <span class="eta-placeholder">請先選擇車站</span>
             </div>
@@ -160,7 +171,6 @@
     </div>
 
     <!-- Leaflet 地圖 JavaScript 庫與箭咀外掛 -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet-polylinedecorator@1.6.0/dist/leaflet.polylineDecorator.js"></script>
 
@@ -174,6 +184,7 @@
         let routeStopsData = []; 
         let sortedRouteNames = [];
         let allRoutesMap = {}; 
+        let etaTimer = null; // 全域 ETA 自動更新計時器
 
         window.onload = function() {
             initMap();
@@ -191,7 +202,7 @@
             }).addTo(map);
         }
 
-        // 2. 載入全港九巴路線清單
+        // 2. 載入全港九巴路線清單，並進行自然數字排序 (6, 6C, 6D... 細到大)
         async function loadAllRoutes() {
             try {
                 const res = await fetch(`${API_BASE}/route`);
@@ -211,8 +222,12 @@
                     }
                 });
 
-                sortedRouteNames = Object.keys(allRoutesMap).sort();
-                updateRouteDatalist(''); // 預設載入全清單
+                // 使用自然排序 (numeric: true) 確保 6, 6C, 6D... 60 依從小到大精準排序
+                sortedRouteNames = Object.keys(allRoutesMap).sort((a, b) => 
+                    a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+                );
+                
+                updateRouteDatalist(''); 
             } catch (err) {
                 console.error("無法取得路線列表:", err);
             }
@@ -287,15 +302,29 @@
                 const marker = stopMarkers.find(m => m.stopId === stopId);
                 if (marker) marker.openPopup();
 
-                // 查詢實時到站預報
                 const route = document.getElementById('route-input').value.trim().toUpperCase();
                 const bound = document.getElementById('bound-select').value;
-                fetchETA(stopId, route, bound);
+                
+                // 啟動 30 秒自動更新定時器
+                startAutoRefreshETA(stopId, route, bound);
             }
+        }
+
+        // 啟動與重設 ETA 自動更新計時器 (每30秒)
+        function startAutoRefreshETA(stopId, route, bound) {
+            if (etaTimer) clearInterval(etaTimer); // 清除舊的定時器
+            
+            fetchETA(stopId, route, bound); // 立即執行第一次
+            
+            etaTimer = setInterval(() => {
+                fetchETA(stopId, route, bound);
+            }, 30000); // 30,000 毫秒 = 30 秒
         }
 
         // 4. 取得車站數據並發起高精準繪製
         async function loadRouteDetails() {
+            if (etaTimer) clearInterval(etaTimer); // 清除定時器
+
             const route = document.getElementById('route-input').value.trim().toUpperCase();
             const bound = document.getElementById('bound-select').value;
             const stopSelect = document.getElementById('stop-select');
@@ -353,9 +382,9 @@
             }
         }
 
-        // 5. 分組路網擬合算法：解決大量點位導致 OSRM 失敗問題
+        // 5. 分組路網擬合算法
         async function fetchAccuratePath(stops) {
-            const chunkSize = 8; // 每組 8 個站點分段請求，確保 100% 成功擬合道路
+            const chunkSize = 8;
             let fullPath = [];
 
             for (let i = 0; i < stops.length - 1; i += chunkSize - 1) {
@@ -370,7 +399,7 @@
                         if (data.routes && data.routes[0]) {
                             const coords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
                             if (fullPath.length > 0 && coords.length > 0) {
-                                fullPath.push(...coords.slice(1)); // 去除重疊起點
+                                fullPath.push(...coords.slice(1));
                             } else {
                                 fullPath.push(...coords);
                             }
@@ -381,7 +410,6 @@
                     console.warn("分組 OSRM 請求失敗，該段備用直線擬合:", e);
                 }
 
-                // 降級備用方案：若單段 API 異常，該區間以直線平滑連接
                 const fallbackLine = chunkStops.map(s => [parseFloat(s.lat), parseFloat(s.long)]);
                 if (fullPath.length > 0) {
                     fullPath.push(...fallbackLine.slice(1));
@@ -399,7 +427,6 @@
             if (polylineLayer) map.removeLayer(polylineLayer);
             if (decoratorLayer) map.removeLayer(decoratorLayer);
 
-            // 建立車站標記 (Marker)
             stops.forEach((stop, idx) => {
                 const pos = [parseFloat(stop.lat), parseFloat(stop.long)];
                 const marker = L.marker(pos)
@@ -414,17 +441,14 @@
                 stopMarkers.push(marker);
             });
 
-            // 計算精準道路軌跡
             const accuratePath = await fetchAccuratePath(stops);
 
-            // 繪製藍色擬合軌跡線
             polylineLayer = L.polyline(accuratePath, { 
                 color: '#007aff', 
                 weight: 5, 
                 opacity: 0.85 
             }).addTo(map);
 
-            // 疊加行車箭咀
             decoratorLayer = L.polylineDecorator(polylineLayer, {
                 patterns: [
                     {
@@ -442,11 +466,9 @@
             map.fitBounds(polylineLayer.getBounds(), { padding: [30, 30] });
         }
 
-        // 7. 抓取九巴 API 實時到站預報 (ETA)
+        // 7. 抓取九巴 API 實時到站預報 (ETA) 與時間狀態判斷
         async function fetchETA(stopId, route, boundStr) {
             const etaDisplay = document.getElementById('eta-display');
-            etaDisplay.innerHTML = '<span class="eta-placeholder">載入到站時間...</span>';
-
             const dirCode = (boundStr === 'outbound') ? 'O' : 'I';
 
             try {
@@ -458,26 +480,47 @@
                     return;
                 }
 
-                // 過濾方向與有效 ETA
-                const filtered = json.data
-                    .filter(item => item.dir === dirCode && item.eta)
-                    .sort((a, b) => new Date(a.eta) - new Date(b.eta))
-                    .slice(0, 3);
+                const now = new Date();
 
-                if (filtered.length === 0) {
-                    etaDisplay.innerHTML = '<span class="eta-placeholder">末班車已過 / 暫無服務</span>';
+                // 數據處理與精準時間邏輯過濾
+                const processed = json.data
+                    .filter(item => item.dir === dirCode && item.eta)
+                    .map(item => {
+                        const etaTime = new Date(item.eta);
+                        const diffSec = (etaTime - now) / 1000; // 相差秒數
+                        return { ...item, diffSec };
+                    })
+                    .filter(item => item.diffSec >= -30) // 過濾：超過 30 秒前的歷史班次自動清除
+                    .sort((a, b) => a.diffSec - b.diffSec)
+                    .slice(0, 3); // 顯示最近 3 班
+
+                if (processed.length === 0) {
+                    etaDisplay.innerHTML = '<span class="eta-placeholder">末班車已過 / 暫無預報</span>';
                     return;
                 }
 
-                const now = new Date();
-                const html = filtered.map(item => {
-                    const etaTime = new Date(item.eta);
-                    const diffMins = Math.max(0, Math.round((etaTime - now) / 60000));
-                    const timeText = diffMins === 0 ? '即將到達' : `${diffMins} 分鐘`;
+                const html = processed.map(item => {
+                    let timeText = "";
+                    let badgeClass = "";
+
+                    if (item.diffSec < 0 && item.diffSec >= -30) {
+                        // 1. 到站至 30 秒內 -> 正在離開
+                        timeText = "正在離開";
+                        badgeClass = "leaving";
+                    } else if (item.diffSec >= 0 && item.diffSec <= 60) {
+                        // 2. 最後 1 分鐘內 (0~60秒) -> 即將到達
+                        timeText = "即將到達";
+                        badgeClass = "arriving";
+                    } else {
+                        // 3. 超過 1 分鐘 -> 顯示剩餘分鐘數 (向上取整)
+                        const mins = Math.ceil(item.diffSec / 60);
+                        timeText = `${mins} 分鐘`;
+                    }
+
                     const rmkText = item.rmk_tc ? item.rmk_tc : '';
 
                     return `
-                        <div class="eta-badge">
+                        <div class="eta-badge ${badgeClass}">
                             <span>${timeText}</span>
                             ${rmkText ? `<span class="eta-rmk">${rmkText}</span>` : ''}
                         </div>
