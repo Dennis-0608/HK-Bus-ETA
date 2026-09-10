@@ -37,14 +37,14 @@
             gap: 10px;
         }
 
-        /* 第一行：輸入路線、選擇方向、選擇巴士站 */
+        /* 第一行：選擇路線、選擇方向、選擇巴士站 */
         .row-top {
             display: flex;
             gap: 8px;
             width: 100%;
         }
 
-        .route-group { flex: 1; min-width: 0; }
+        .route-group { flex: 1.2; min-width: 0; }
         .bound-group { flex: 1.2; min-width: 0; }
         .stop-group  { flex: 1.4; min-width: 0; }
 
@@ -63,7 +63,7 @@
             text-overflow: ellipsis;
         }
 
-        select, input {
+        select {
             padding: 6px 8px;
             border: 1px solid #c7c7cc;
             border-radius: 8px;
@@ -76,7 +76,7 @@
             text-overflow: ellipsis;
         }
 
-        select:focus, input:focus {
+        select:focus {
             border-color: #007aff;
             background-color: #ffffff;
         }
@@ -104,7 +104,7 @@
             border: 1px solid #b8d7ff;
             border-radius: 10px;
             padding: 6px 8px;
-            min-height: 60px;
+            height: 60px;
             display: flex;
             align-items: center;
             gap: 8px;
@@ -160,21 +160,23 @@
             line-height: 1.4;
         }
 
-        /* 右邊更新狀態與按鈕區塊 */
+        /* 右邊更新狀態與按鈕區塊（高度對齊左側 60px 的 ETA 框） */
         .status-section {
             display: flex;
             flex-direction: column;
             align-items: flex-end;
-            justify-content: flex-end;
-            gap: 4px;
+            justify-content: space-between;
+            height: 60px;
             flex-shrink: 0;
         }
 
         .update-info {
-            font-size: 10px;
+            font-size: 11px;
             font-weight: 600;
             color: #6c6c70;
             white-space: nowrap;
+            line-height: 1;
+            margin-top: 2px;
         }
 
         .update-time-text {
@@ -226,7 +228,7 @@
             display: none;
         }
 
-        /* 自訂紅色地標樣式（消除 Leaflet預設白框） */
+        /* 自訂紅色地標樣式 */
         .custom-red-pin {
             background: none !important;
             border: none !important;
@@ -238,12 +240,13 @@
     <!-- 頂部控制面板 -->
     <div class="control-panel">
         
-        <!-- 第一行：三項選擇放置在同一行 -->
+        <!-- 第一行：改為三個下拉選單 -->
         <div class="row-top">
             <div class="form-group route-group">
-                <label for="route-input">1. 輸入城巴路線</label>
-                <input type="text" id="route-input" list="route-list" placeholder="如: 70, A21, 10" autocomplete="off">
-                <datalist id="route-list"></datalist>
+                <label for="route-select">1. 選擇城巴路線</label>
+                <select id="route-select" disabled>
+                    <option value="">載入中...</option>
+                </select>
             </div>
 
             <div class="form-group bound-group">
@@ -261,7 +264,7 @@
             </div>
         </div>
 
-        <!-- 第二行：預計到站時間（左側） + 更新時間與按鈕（右側） -->
+        <!-- 第二行：預計到站時間（左） + 完美垂直對齊的更新時間與按鈕（右） -->
         <div class="row-bottom">
             <div class="eta-section">
                 <div class="form-group">
@@ -300,6 +303,7 @@
         
         let map;
         let stopMarkers = [];
+        let routePolyline = null; // 儲存行車軌跡 Polyline 物件
         
         let routeStopsData = []; 
         let sortedRouteObjects = []; 
@@ -310,7 +314,6 @@
         let currentSelectedStop = null;
         let currentSelectedRoute = null;
         let currentSelectedBound = null;
-        let lastValidRouteInput = ""; // 記錄上次成功的輸入值
 
         // 自訂紅色向量 (SVG) 地標 Icon
         const redIcon = L.divIcon({
@@ -323,21 +326,6 @@
             iconAnchor: [14, 42],
             popupAnchor: [0, -38]
         });
-
-        // 工具函式：防抖動 (Debounce)
-        function debounce(func, delay = 150) {
-            let timer;
-            return function(...args) {
-                clearTimeout(timer);
-                timer = setTimeout(() => func.apply(this, args), delay);
-            };
-        }
-
-        // 去除標籤修飾語
-        function cleanRouteName(inputStr) {
-            if (!inputStr) return "";
-            return inputStr.replace(/\s*\((城巴|九巴|合辦)\)/g, '').trim().toUpperCase();
-        }
 
         // 方向對應檢查 (O/I 代表 Outbound/Inbound)
         function isMatchingDir(itemDir, targetBound) {
@@ -370,8 +358,9 @@
             }).addTo(map);
         }
 
-        // 載入城巴路線資料庫
+        // 載入城巴路線資料庫並填入下拉選單
         async function loadAllRoutes() {
+            const routeSelect = document.getElementById('route-select');
             try {
                 const ctbRes = await fetch(`${API_CTB}/route/CTB`)
                     .then(r => r.json())
@@ -403,66 +392,35 @@
                     a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
                 );
 
-                sortedRouteObjects = routeKeys.map(rName => ({
-                    rawRoute: rName,
-                    displayLabel: `${rName} (城巴)`
-                }));
-                
-                updateRouteDatalist(''); 
+                const fragment = document.createDocumentFragment();
+                const defaultOpt = document.createElement('option');
+                defaultOpt.value = "";
+                defaultOpt.textContent = "-- 請選擇路線 --";
+                fragment.appendChild(defaultOpt);
+
+                routeKeys.forEach(rName => {
+                    const opt = document.createElement('option');
+                    opt.value = rName;
+                    opt.textContent = `${rName} (城巴)`;
+                    fragment.appendChild(opt);
+                });
+
+                routeSelect.innerHTML = '';
+                routeSelect.appendChild(fragment);
+                routeSelect.disabled = false;
+
             } catch (err) {
                 console.error("無法取得城巴路線列表:", err);
+                routeSelect.innerHTML = '<option value="">載入失敗</option>';
             }
         }
 
-        function updateRouteDatalist(prefix) {
-            const routeList = document.getElementById('route-list');
-            const query = cleanRouteName(prefix);
-            
-            const filtered = query 
-                ? sortedRouteObjects.filter(item => item.rawRoute.startsWith(query)) 
-                : sortedRouteObjects;
-
-            const fragment = document.createDocumentFragment();
-            filtered.slice(0, 80).forEach(item => {
-                const opt = document.createElement('option');
-                opt.value = item.displayLabel;
-                fragment.appendChild(opt);
-            });
-
-            routeList.innerHTML = '';
-            routeList.appendChild(fragment);
-        }
-
         function setupEventListeners() {
-            const routeInput = document.getElementById('route-input');
+            const routeSelect = document.getElementById('route-select');
             const boundSelect = document.getElementById('bound-select');
             const stopSelect = document.getElementById('stop-select');
 
-            const debouncedInput = debounce((val) => {
-                updateRouteDatalist(val);
-                onRouteInputChanged();
-            }, 100);
-
-            // 輸入時即時過濾選項
-            routeInput.addEventListener('input', (e) => {
-                debouncedInput(e.target.value);
-            });
-
-            // 【優化點 1】：點擊/聚焦時自動備份並清空，拉出全部路線下拉選單
-            routeInput.addEventListener('focus', (e) => {
-                lastValidRouteInput = e.target.value;
-                e.target.value = '';
-                updateRouteDatalist('');
-            });
-
-            // 若離開放棄選擇，恢復原先路線
-            routeInput.addEventListener('blur', (e) => {
-                if (!e.target.value.trim() && lastValidRouteInput) {
-                    e.target.value = lastValidRouteInput;
-                }
-            });
-
-            routeInput.addEventListener('change', onRouteInputChanged);
+            routeSelect.addEventListener('change', onRouteSelectChanged);
             boundSelect.addEventListener('change', loadRouteDetails);
 
             stopSelect.addEventListener('change', (e) => {
@@ -472,8 +430,8 @@
             });
         }
 
-        function onRouteInputChanged() {
-            const rawRoute = cleanRouteName(document.getElementById('route-input').value);
+        function onRouteSelectChanged() {
+            const rawRoute = document.getElementById('route-select').value;
             const boundSelect = document.getElementById('bound-select');
 
             if (!rawRoute || !allRoutesMap[rawRoute]) {
@@ -482,18 +440,13 @@
                 return;
             }
 
-            // 成功配對路線，更新記憶的最新有效值
-            lastValidRouteInput = document.getElementById('route-input').value;
-
             boundSelect.innerHTML = '';
             const routeObj = allRoutesMap[rawRoute];
 
             if (routeObj.ctb.length > 0) {
                 routeObj.ctb.forEach(b => {
                     const opt = document.createElement('option');
-                    opt.value = JSON.stringify({
-                        bound: b.bound
-                    });
+                    opt.value = JSON.stringify({ bound: b.bound });
                     opt.textContent = `往 ${b.dest}`;
                     boundSelect.appendChild(opt);
                 });
@@ -524,7 +477,7 @@
         async function loadRouteDetails() {
             if (etaTimer) clearInterval(etaTimer);
 
-            const rawRoute = cleanRouteName(document.getElementById('route-input').value);
+            const rawRoute = document.getElementById('route-select').value;
             const boundSelectVal = document.getElementById('bound-select').value;
             const stopSelect = document.getElementById('stop-select');
             const etaDisplay = document.getElementById('eta-display');
@@ -605,7 +558,7 @@
                 if (marker) marker.openPopup();
 
                 currentSelectedStop = targetStop;
-                currentSelectedRoute = cleanRouteName(document.getElementById('route-input').value);
+                currentSelectedRoute = document.getElementById('route-select').value;
                 
                 const boundVal = document.getElementById('bound-select').value;
                 if (boundVal) {
@@ -639,10 +592,17 @@
             document.getElementById('update-time-text').textContent = `${hours}:${minutes}:${seconds}`;
         }
 
-        // 渲染巴士站地標
+        // 渲染地圖地標與紅色行車軌跡
         function renderMapElements(stops) {
+            // 清除舊地標
             stopMarkers.forEach(m => map.removeLayer(m));
             stopMarkers = [];
+
+            // 清除舊軌跡
+            if (routePolyline) {
+                map.removeLayer(routePolyline);
+                routePolyline = null;
+            }
 
             if (!stops || stops.length === 0) return;
 
@@ -652,7 +612,7 @@
                 const pos = [parseFloat(stop.lat), parseFloat(stop.long)];
                 boundsList.push(pos);
 
-                // 【優化點 2】：套用自訂的紅色圖示 { icon: redIcon }
+                // 繪製紅色車站地標
                 const marker = L.marker(pos, { icon: redIcon })
                     .addTo(map)
                     .bindPopup(`<div style="font-size: 16px; font-weight: bold; padding: 2px 0; color: #1c1c1e;">${idx + 1}. ${stop.name_tc}</div>`);
@@ -665,7 +625,15 @@
                 stopMarkers.push(marker);
             });
 
-            // 自動調整地圖視角涵蓋所有車站
+            // 繪製紅色行車軌跡 (依車站順序連線)
+            routePolyline = L.polyline(boundsList, {
+                color: '#FF3B30',
+                weight: 4,
+                opacity: 0.85,
+                lineJoin: 'round'
+            }).addTo(map);
+
+            // 自動調整地圖視角涵蓋所有車站與路線
             if (boundsList.length > 0) {
                 map.fitBounds(L.latLngBounds(boundsList), { padding: [30, 30] });
             }
